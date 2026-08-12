@@ -62,6 +62,8 @@ class CharacterState(BaseModel):
     max_hp: int
     ac: int
     gold: int
+    silver: int = 0
+    copper: int = 0
     abilities: dict[str, int]
 
 

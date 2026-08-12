@@ -1,13 +1,36 @@
+import { useEffect } from "react";
+import { useRevealText } from "../../hooks/useRevealText";
+import { renderInline } from "./StoryMarkup";
+
 type Props = {
   speaker: string;
   text: string;
+  reveal?: boolean;
+  onRevealDone?: () => void;
+  onSkipReady?: (skip: () => void) => void;
 };
 
-export function Dialogue({ speaker, text }: Props) {
+export function Dialogue({ speaker, text, reveal = false, onRevealDone, onSkipReady }: Props) {
+  const { shown, done, skip } = useRevealText(text, {
+    active: reveal,
+    msPerChunk: 28,
+    wordsPerChunk: 1,
+    onDone: onRevealDone,
+  });
+
+  useEffect(() => {
+    onSkipReady?.(skip);
+  }, [onSkipReady, skip]);
+
+  const display = reveal ? shown : text;
+
   return (
-    <div className="rounded border-l-2 border-accent/60 bg-panel-2/80 px-3 py-2">
-      <p className="display-text text-sm text-accent">{speaker}</p>
-      <p className="story-text mt-1 text-[0.95rem] italic text-text/90">“{text}”</p>
+    <div className="dialogue-line mx-auto max-w-3xl">
+      <p className="display-text mb-1.5 text-[0.8rem] tracking-[0.12em] text-accent/90">{speaker}</p>
+      <p className="story-text border-l border-bronze/50 pl-3.5 text-[1.08rem] leading-[1.75] italic text-parchment/85 md:text-[1.12rem]">
+        “{renderInline(display)}”
+        {reveal && !done && display ? <span className="story-reveal-caret" aria-hidden /> : null}
+      </p>
     </div>
   );
 }

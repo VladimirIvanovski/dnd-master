@@ -18,7 +18,7 @@ from app.database.repositories import (
     QuestRepository,
     RelationshipRepository,
 )
-from app.game.dice import ability_modifier, roll_dice, roll_d20, skill_check
+from app.game.dice import SecureRandom, ability_modifier, roll_dice, roll_d20, skill_check
 from app.schemas.gameplay import DiceResultOut, StateChange
 from app.utils.ids import utcnow
 
@@ -41,6 +41,16 @@ SKILL_TO_ABILITY = {
     "persuasion": "charisma",
     "deception": "charisma",
     "investigation": "intelligence",
+    "lockpick": "dexterity",
+    "sleight of hand": "dexterity",
+    "survival": "wisdom",
+    "intimidation": "charisma",
+    "performance": "charisma",
+    "nature": "intelligence",
+    "history": "intelligence",
+    "arcana": "intelligence",
+    "medicine": "wisdom",
+    "animal handling": "wisdom",
 }
 
 
@@ -59,10 +69,16 @@ class GameEngine:
         "apply_damage",
         "heal",
         "add_item",
+        "gain_item",
         "remove_item",
         "gain_xp",
         "gain_gold",
         "spend_gold",
+        "subtract_gold",
+        "gain_silver",
+        "spend_silver",
+        "gain_copper",
+        "spend_copper",
         "move_to_location",
         "start_quest",
         "update_quest",
@@ -79,9 +95,9 @@ class GameEngine:
         "set_weather",
     }
 
-    def __init__(self, db: Session, rng: random.Random | None = None):
+    def __init__(self, db: Session, rng: random.Random | SecureRandom | None = None):
         self.db = db
-        self.rng = rng or random.Random()
+        self.rng = rng or SecureRandom()
         self.campaigns = CampaignRepository(db)
         self.characters = CharacterRepository(db)
         self.inventory = InventoryRepository(db)
@@ -173,12 +189,14 @@ class GameEngine:
         session = self.combat.create(campaign_id=campaign_id, status="active")
         built = []
         for c in combatants:
+            raw_ref = c.get("ref_id")
+            ref_id = uuid.UUID(str(raw_ref)) if raw_ref else None
             built.append(
                 Combatant(
                     session_id=session.id,
                     name=c["name"],
                     combatant_type=c.get("combatant_type", "enemy"),
-                    ref_id=c.get("ref_id"),
+                    ref_id=ref_id,
                     initiative=int(c.get("initiative", self.roll_d20().total)),
                     hp=c.get("hp", 10),
                     max_hp=c.get("max_hp", c.get("hp", 10)),
@@ -226,6 +244,25 @@ class GameEngine:
         target.hp = max(0, target.hp - amount)
         if target.hp <= 0:
             target.is_active = False
+            # Keep persistent NPC roster in sync so corpses leave "nearby".
+            npc = None
+            if target.ref_id:
+                npc = self.npcs.get(target.ref_id)
+            if npc is None and target.name:
+                from sqlalchemy import select
+                from app.database.models import NPC
+
+                npc = self.db.scalar(
+                    select(NPC).where(
+                        NPC.campaign_id == campaign_id,
+                        NPC.name == target.name,
+                        NPC.is_alive.is_(True),
+                    )
+                )
+            if npc and npc.campaign_id == campaign_id:
+                npc.is_alive = False
+                npc.hp = 0
+            self.db.flush()
             return f"{target.name} defeated"
         self.db.flush()
         return f"{target.name} hp={target.hp}"
@@ -268,6 +305,12 @@ class GameEngine:
     ) -> str:
         action = change.action
         p = change.params
+        if action == "gain_item":
+            action = "add_item"
+        if action == "subtract_gold":
+            action = "spend_gold"
+        if action in {"move_to", "move", "travel_to"}:
+            action = "move_to_location"
         if action not in self.ALLOWED_ACTIONS:
             raise ValueError(f"Unknown action {action}")
 
@@ -351,8 +394,14 @@ class GameEngine:
                     setattr(npc, key, str(p[key]))
             if "location_id" in p and p["location_id"]:
                 npc.location_id = uuid.UUID(str(p["location_id"]))
+            if "hp" in p:
+                npc.hp = max(0, int(p["hp"]))
             if "is_alive" in p:
                 npc.is_alive = bool(p["is_alive"])
+            elif npc.hp <= 0:
+                npc.is_alive = False
+            if not npc.is_alive:
+                npc.hp = 0
             self.db.flush()
             return f"npc updated {npc.name}"
         if action == "gain_xp":
@@ -362,7 +411,7 @@ class GameEngine:
             xp, level = self.gain_xp(character_id, amount)
             return f"xp={xp} level={level}"
         if action == "gain_gold":
-            amount = int(p.get("amount", 0))
+            amount = int(p.get("amount", p.get("gold", 0)))
             if amount <= 0:
                 raise ValueError("gold gain must be positive")
             if amount > MAX_GOLD_GAIN:
@@ -370,25 +419,96 @@ class GameEngine:
             ch = self.characters.get(character_id)
             ch.gold += amount
             self.db.flush()
-            return f"gold={ch.gold}"
-        if action == "spend_gold":
+            return f"gp={ch.gold} sp={ch.silver} cp={ch.copper}"
+        if action in ("spend_gold", "subtract_gold"):
             ch = self.characters.get(character_id)
-            amount = int(p.get("amount", 0))
+            amount = int(p.get("amount", p.get("gold", 0)))
             if amount <= 0:
                 raise ValueError("gold spend must be positive")
             if ch.gold < amount:
                 raise ValueError("not enough gold")
             ch.gold -= amount
             self.db.flush()
-            return f"gold={ch.gold}"
+            return f"gp={ch.gold} sp={ch.silver} cp={ch.copper}"
+        if action == "gain_silver":
+            amount = int(p.get("amount", p.get("silver", 0)))
+            if amount <= 0 or amount > MAX_GOLD_GAIN * 10:
+                raise ValueError("invalid silver amount")
+            ch = self.characters.get(character_id)
+            ch.silver += amount
+            self.db.flush()
+            return f"gp={ch.gold} sp={ch.silver} cp={ch.copper}"
+        if action == "spend_silver":
+            ch = self.characters.get(character_id)
+            amount = int(p.get("amount", p.get("silver", 0)))
+            if amount <= 0:
+                raise ValueError("silver spend must be positive")
+            if ch.silver < amount:
+                raise ValueError("not enough silver")
+            ch.silver -= amount
+            self.db.flush()
+            return f"gp={ch.gold} sp={ch.silver} cp={ch.copper}"
+        if action == "gain_copper":
+            amount = int(p.get("amount", p.get("copper", 0)))
+            if amount <= 0 or amount > MAX_GOLD_GAIN * 100:
+                raise ValueError("invalid copper amount")
+            ch = self.characters.get(character_id)
+            ch.copper += amount
+            self.db.flush()
+            return f"gp={ch.gold} sp={ch.silver} cp={ch.copper}"
+        if action == "spend_copper":
+            ch = self.characters.get(character_id)
+            amount = int(p.get("amount", p.get("copper", 0)))
+            if amount <= 0:
+                raise ValueError("copper spend must be positive")
+            if ch.copper < amount:
+                raise ValueError("not enough copper")
+            ch.copper -= amount
+            self.db.flush()
+            return f"gp={ch.gold} sp={ch.silver} cp={ch.copper}"
         if action == "move_to_location":
-            loc_id = uuid.UUID(str(p["location_id"]))
-            loc = self.locations.get(loc_id)
+            loc = None
+            raw_id = p.get("location_id") or p.get("id")
+            if raw_id:
+                try:
+                    loc = self.locations.get(uuid.UUID(str(raw_id)))
+                except ValueError as exc:
+                    raise ValueError("invalid location_id") from exc
+            if loc is None:
+                name = (
+                    p.get("location_name")
+                    or p.get("name")
+                    or p.get("location")
+                    or p.get("destination")
+                )
+                if name:
+                    from app.visual.hashing import normalize_name
+
+                    loc = self.locations.find_by_normalized(
+                        campaign_id, normalize_name(str(name))
+                    )
+                    if loc is None:
+                        # Soft match: any campaign location containing the name
+                        from sqlalchemy import select
+                        from app.database.models import Location
+
+                        needle = str(name).strip().lower()
+                        candidates = list(
+                            self.db.scalars(
+                                select(Location).where(Location.campaign_id == campaign_id)
+                            ).all()
+                        )
+                        loc = next(
+                            (c for c in candidates if needle in c.name.lower() or c.name.lower() in needle),
+                            None,
+                        )
             if not loc or loc.campaign_id != campaign_id:
                 raise ValueError("invalid location")
             ch = self.characters.get(character_id)
-            ch.location_id = loc_id
+            ch.location_id = loc.id
             self.db.flush()
+            # Ensure destination art exists / regenerates for richer surroundings profile
+            self.db.info.setdefault("pending_visuals", []).append(("location", loc.id))
             return f"moved to {loc.name}"
         if action == "start_quest":
             q = self.quests.create(
@@ -506,21 +626,35 @@ class GameEngine:
         for req in requests:
             if req.kind == "d20" or req.notation.lower().startswith("1d20") or req.skill:
                 ability_name = "strength"
+                skill_label = req.skill
                 if req.skill:
                     ability_name = SKILL_TO_ABILITY.get(req.skill.lower(), req.skill.lower())
                 ability = 10
                 if character:
-                    ability = getattr(character, ability_name, 10)
+                    ability = int(getattr(character, ability_name, 10) or 10)
                 roll = self.roll_d20()
-                total = roll.total + ability_modifier(ability)
-                success = total >= req.dc if req.dc is not None else None
+                natural = roll.rolls[0] if roll.rolls else roll.total
+                mod = ability_modifier(ability)
+                total = natural + mod
+                success = total >= req.dc if req.dc is not None else total >= 12
+                critical = None
+                if natural == 20:
+                    critical = "natural_20"
+                elif natural == 1:
+                    critical = "natural_1"
                 results.append(
                     DiceResultOut(
                         notation="1d20",
                         total=total,
-                        rolls=roll.rolls,
+                        rolls=[natural],
                         purpose=req.purpose or req.skill or "",
                         success=success,
+                        ability=ability_name,
+                        skill=skill_label,
+                        modifier=mod,
+                        dc=req.dc if req.dc is not None else 12,
+                        natural=natural,
+                        critical=critical,
                     )
                 )
             else:
@@ -531,6 +665,8 @@ class GameEngine:
                         total=roll.total,
                         rolls=roll.rolls,
                         purpose=req.purpose,
+                        modifier=roll.modifier,
+                        natural=roll.rolls[0] if len(roll.rolls) == 1 else None,
                     )
                 )
         return results

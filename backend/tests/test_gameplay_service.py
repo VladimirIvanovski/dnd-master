@@ -2,17 +2,16 @@ from app.ai.dm_service import DMService
 from app.ai.mock_provider import MockLLMProvider
 from app.game.state import GameStateLoader
 from app.schemas.gameplay import DMResponse, PlayerActionRequest, StateChange
-from app.services.campaign import CampaignService, CharacterService
 from app.services.gameplay import GameplayService
-from app.schemas.common import CampaignCreate, CharacterCreate
 from app.game.engine import GameEngine
+from tests.conftest import start_campaign
 
 
 def test_gameplay_service_with_mock_llm(db):
-    campaign = CampaignService(db).create(CampaignCreate(name="C1", description="d"))
-    character = CharacterService(db).create(
-        CharacterCreate(campaign_id=campaign.id, name="Aria")
-    )
+    _user, campaign, character = start_campaign(db, username="aria_owner")
+    # rename for test clarity — character already named Hero; recreate path uses fixed helper
+    character.name = "Aria"
+    db.commit()
 
     fixed = DMResponse(
         narration="Marta nods and hands you a rusty key.",
@@ -52,10 +51,7 @@ def test_gameplay_service_with_mock_llm(db):
 
 
 def test_rejects_illegal_state_change(db):
-    campaign = CampaignService(db).create(CampaignCreate(name="C2"))
-    character = CharacterService(db).create(
-        CharacterCreate(campaign_id=campaign.id, name="Borin")
-    )
+    _user, campaign, character = start_campaign(db, username="borin_owner")
     engine = GameEngine(db)
     result = engine.apply_state_changes(
         campaign_id=campaign.id,

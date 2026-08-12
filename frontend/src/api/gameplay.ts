@@ -6,6 +6,10 @@ export type CampaignOpening = {
   themes: string[];
   opening_narration: string;
   opening_delivered: boolean;
+  user_campaign_description?: string;
+  campaign_dna?: Record<string, unknown>;
+  campaign_dna_version?: number | null;
+  campaign_dna_summary?: string[];
 };
 
 export const gameplayApi = {
@@ -23,6 +27,11 @@ export const gameplayApi = {
   opening: (campaignId: string) =>
     apiRequest<CampaignOpening>(
       `/api/gameplay/opening?campaign_id=${encodeURIComponent(campaignId)}`,
+    ),
+
+  history: (campaignId: string, characterId: string, limit = 40) =>
+    apiRequest<Array<{ id: string; event_type: string; summary: string; created_at?: string | null }>>(
+      `/api/gameplay/history?campaign_id=${encodeURIComponent(campaignId)}&character_id=${encodeURIComponent(characterId)}&limit=${limit}`,
     ),
 
   ackOpening: (campaignId: string) =>

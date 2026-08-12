@@ -26,5 +26,10 @@ frontend/.env
 .DS_Store
 Thumbs.db
 
-# Alembic
-*.db
+# Visual assets
+storage/
+backend/storage/
+
+# Local TLS / Tailscale certs
+*.crt
+*.key

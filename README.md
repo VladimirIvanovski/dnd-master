@@ -48,6 +48,11 @@ project/
 | `GROQ_BASE_URL` | Default `https://api.groq.com/openai/v1` |
 | `EMBEDDING_DIMENSIONS` | Vector size (default 1536) |
 | `CORS_ORIGINS` | Comma-separated frontend origins |
+| `JWT_SECRET` | Secret for signing access tokens (required in production) |
+| `JWT_EXPIRE_MINUTES` | Access token lifetime (default 7 days) |
+| `IMAGE_MODEL` | `mock` or `sd-turbo` |
+| `IMAGE_MODEL_PATH` | Local SD-Turbo folder (`storage/models/sd-turbo`) |
+| `IMAGE_DEVICE` | `cpu` (default) |
 | `OPENAI_API_KEY` | Optional, for a future real provider |
 | `LOG_LEVEL` | Logging level |
 
@@ -88,7 +93,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 API docs: http://127.0.0.1:8000/docs  
 Health: http://127.0.0.1:8000/health
 
-Simple tenancy: send `X-Username: player` (default). Campaigns/characters are scoped to that username.
+**Auth:** register/login via `/api/auth/*` to get a JWT. Send `Authorization: Bearer <token>` on REST calls and `?token=` on `/ws/gameplay`. Campaigns, characters, and world data are owned per user — User A cannot access User B’s data. Groq keys stay server-side only.
 
 ## Frontend startup
 
@@ -100,6 +105,67 @@ npm run dev
 ```
 
 UI: http://127.0.0.1:5173
+
+## Play with friends (Tailscale Funnel)
+
+Run the **entire game on your PC** (Postgres + API + built UI on one port), then expose that port with Tailscale Funnel. API keys stay in `backend/.env` only — the browser never receives them.
+
+### 1. Start the game locally
+
+From the repo root (Windows):
+
+```powershell
+.\start-game.ps1
+```
+
+Or with an explicit port:
+
+```powershell
+$env:PORT = "8000"
+.\start-game.ps1
+```
+
+Linux / macOS:
+
+```bash
+chmod +x start-game.sh
+PORT=8000 ./start-game.sh
+```
+
+This will:
+- start Postgres via Docker
+- build the frontend with empty `VITE_API_BASE_URL` / `VITE_WS_BASE_URL` (same-origin `/api` + `wss://` under Funnel)
+- run FastAPI on `0.0.0.0:$PORT` and serve the UI from `frontend/dist`
+
+Local check: http://127.0.0.1:8000/health
+
+### 2. Start Tailscale Funnel
+
+In another terminal (Tailscale installed and logged in):
+
+```powershell
+tailscale funnel --bg 8000
+```
+
+(Use the same port as `PORT` above.)
+
+### 3. Get the public HTTPS URL
+
+```powershell
+tailscale funnel status
+```
+
+Copy the HTTPS URL Tailscale prints (typically `https://<your-machine>.<tailnet>.ts.net/`).
+
+### 4. Share that URL with another player
+
+Send them the HTTPS link. While `start-game` is running on your PC, they can open it and play. WebSockets use `wss://` on the same host automatically.
+
+Stop Funnel when done:
+
+```powershell
+tailscale funnel reset
+```
 
 ## Docker
 
@@ -117,7 +183,7 @@ cd frontend
 npm run build
 ```
 
-Integration checks cover memory recall, engine authority (gold/HP), dice gating, combat, persistence, and ownership.
+Integration checks cover memory recall, engine authority (gold/HP), dice gating, combat, persistence, JWT auth, cross-user isolation, WebSocket auth, and concurrent multi-user play.
 
 ## AI provider configuration
 
@@ -128,6 +194,19 @@ Integration checks cover memory recall, engine authority (gold/HP), dice gating,
 Built-in providers:
 - `mock` — offline/deterministic (tests)
 - `groq` — set `LLM_PROVIDER=groq`, `GROQ_API_KEY`, and `GROQ_MODEL` (default `openai/gpt-oss-20b`)
+
+## Image generation (CPU)
+
+Local **SD-Turbo** via Diffusers (1-step). Asset sizes: scene/map 512, portraits 256, items 128, icons 64.
+
+```bash
+cd backend
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+python scripts/download_sd_turbo.py --out storage/models/sd-turbo
+```
+
+Set in `.env`: `IMAGE_MODEL=sd-turbo`, `IMAGE_MODEL_PATH=storage/models/sd-turbo`, `IMAGE_DEVICE=cpu`. Use `IMAGE_MODEL=mock` for placeholders.
 
 ## Play loop
 

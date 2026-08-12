@@ -34,7 +34,7 @@ class GroqProvider(LLMProvider):
         self.base_url = (base_url or settings.groq_base_url).rstrip("/")
         self.timeout = timeout
         if not self.api_key:
-            raise ValueError("GROQ_API_KEY is required when LLM_PROVIDER=groq")
+            raise ValueError("API key is required for this LLM provider")
 
     def generate(self, prompt: str, *, system: str | None = None) -> str:
         return self._chat(prompt, system=system, json_mode=False)
@@ -99,6 +99,9 @@ class GroqProvider(LLMProvider):
             "messages": self._messages(prompt, system),
             "temperature": 0.7,
         }
+        # gpt-oss on Cerebras defaults to medium reasoning; keep it light for turn latency.
+        if "gpt-oss" in (self.model or "").lower() and "cerebras.ai" in self.base_url:
+            body["reasoning_effort"] = "low"
         if json_mode:
             body["response_format"] = {"type": "json_object"}
         with httpx.Client(timeout=self.timeout) as client:

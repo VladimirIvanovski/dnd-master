@@ -14,8 +14,18 @@ def test_random_starter_npcs_are_varied():
 
 
 def test_campaign_spawns_varied_starter_npcs(db):
-    a = CampaignService(db).create(CampaignCreate(name="World A", description="Desert intrigue"))
-    b = CampaignService(db).create(CampaignCreate(name="World B", description="Frozen coasts"))
+    from tests.conftest import make_user
+
+    ua = make_user(db, username="world_a")
+    ub = make_user(db, username="world_b")
+    a = CampaignService(db).create(
+        CampaignCreate(name="World A", description="Desert intrigue"),
+        owner_id=ua.id,
+    )
+    b = CampaignService(db).create(
+        CampaignCreate(name="World B", description="Frozen coasts"),
+        owner_id=ub.id,
+    )
     npcs_a = NPCRepository(db).nearby(UUID(a.world_state["starting_location_id"]))
     npcs_b = NPCRepository(db).nearby(UUID(b.world_state["starting_location_id"]))
     assert len(npcs_a) >= 1

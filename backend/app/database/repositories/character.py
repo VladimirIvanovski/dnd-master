@@ -14,6 +14,7 @@ class CharacterRepository:
         character = Character(**kwargs)
         self.db.add(character)
         self.db.flush()
+        self.db.info.setdefault("pending_visuals", []).append(("character", character.id))
         return character
 
     def get(self, character_id: uuid.UUID) -> Character | None:
@@ -61,6 +62,7 @@ class InventoryRepository:
         item = Item(campaign_id=campaign_id, name=name, **item_kwargs)
         self.db.add(item)
         self.db.flush()
+        self.db.info.setdefault("pending_visuals", []).append(("item", item.id))
         link = CharacterItem(character_id=character_id, item_id=item.id, quantity=quantity)
         self.db.add(link)
         self.db.flush()

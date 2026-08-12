@@ -13,7 +13,15 @@ import uuid
 
 
 def _seed(db):
-    user = User(id=uuid.uuid4(), username="t", display_name="T", created_at=utcnow())
+    from app.services.auth import hash_password
+
+    user = User(
+        id=uuid.uuid4(),
+        username="t",
+        display_name="T",
+        password_hash=hash_password("password123"),
+        created_at=utcnow(),
+    )
     db.add(user)
     db.flush()
     campaign = Campaign(

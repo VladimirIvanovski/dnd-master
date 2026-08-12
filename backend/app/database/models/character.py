@@ -31,6 +31,8 @@ class Character(Base):
     max_hp: Mapped[int] = mapped_column(Integer, default=10)
     ac: Mapped[int] = mapped_column(Integer, default=10)
     gold: Mapped[int] = mapped_column(Integer, default=0)
+    silver: Mapped[int] = mapped_column(Integer, default=0)
+    copper: Mapped[int] = mapped_column(Integer, default=0)
     strength: Mapped[int] = mapped_column(Integer, default=10)
     dexterity: Mapped[int] = mapped_column(Integer, default=10)
     constitution: Mapped[int] = mapped_column(Integer, default=10)

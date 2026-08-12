@@ -1,20 +1,22 @@
 import { useEffect, useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { campaignApi, characterApi, gameplayApi, questApi } from "../api";
-import { ActionInput } from "../components/game/ActionInput";
-import { CharacterPanel } from "../components/character/CharacterPanel";
-import { CombatPanel } from "../components/combat/CombatPanel";
 import { ErrorState } from "../components/common/ErrorState";
-import { GameHeader } from "../components/game/GameHeader";
 import { GameLayout } from "../components/game/GameLayout";
+import { JournalPanel } from "../components/game/JournalPanel";
+import { PartyPanel } from "../components/game/PartyPanel";
+import { StoryStage } from "../components/game/StoryStage";
+import { CharacterPanel } from "../components/character/CharacterPanel";
 import { InventoryPanel } from "../components/inventory/InventoryPanel";
 import { LoadingState } from "../components/common/LoadingState";
-import { LocationPanel } from "../components/map/LocationPanel";
-import { MapPanel } from "../components/map/MapPanel";
 import { NPCPanel } from "../components/game/NPCPanel";
 import { QuestPanel } from "../components/quests/QuestPanel";
-import { SceneLog } from "../components/game/SceneLog";
+import { LocationArt } from "../components/visual/LocationArt";
+import { SlideOver } from "../components/ui/SlideOver";
+import { ToastStack } from "../components/ui/ToastStack";
+import { DiceFocus } from "../components/ui/DiceFocus";
 import { useGameStore } from "../stores/gameStore";
+import { useUiStore, type PanelId } from "../stores/uiStore";
 
 export function GamePage() {
   const { campaignId = "", characterId = "" } = useParams();
@@ -28,16 +30,26 @@ export function GamePage() {
     connection,
     busy,
     error,
+    suggestedActions,
     setSession,
     setStateSnapshot,
     setQuests,
     setError,
-    seedOpening,
+    seedHistory,
     connect,
     disconnect,
     sendAction,
     clearScene,
   } = useGameStore();
+
+  const openPanel = useUiStore((s) => s.openPanel);
+  const mountedPanels = useUiStore((s) => s.mountedPanels);
+  const togglePanel = useUiStore((s) => s.togglePanel);
+  const closePanel = useUiStore((s) => s.closePanel);
+  const openPanelById = useUiStore((s) => s.openPanelById);
+  const setCombatActive = useUiStore((s) => s.setCombatActive);
+  const setDialogueActive = useUiStore((s) => s.setDialogueActive);
+  const setAmbientHint = useUiStore((s) => s.setAmbientHint);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,12 +58,13 @@ export function GamePage() {
       try {
         setError(null);
         clearScene();
-        const [camp, char, questList, snapshot, opening] = await Promise.all([
+        const [camp, char, questList, snapshot, opening, history] = await Promise.all([
           campaignApi.get(campaignId),
           characterApi.get(characterId),
           questApi.list(campaignId, characterId),
           gameplayApi.state(campaignId, characterId),
           gameplayApi.opening(campaignId),
+          gameplayApi.history(campaignId, characterId),
         ]);
         if (cancelled) return;
         setSession(camp, char);
@@ -61,8 +74,16 @@ export function GamePage() {
           "dnd-session",
           JSON.stringify({ campaignId, characterId }),
         );
+        seedHistory(
+          {
+            narration: opening.opening_narration,
+            tone: opening.tone,
+            dnaSummary: opening.campaign_dna_summary,
+            dnaVersion: opening.campaign_dna_version,
+          },
+          history,
+        );
         if (opening.opening_narration && !opening.opening_delivered) {
-          seedOpening(opening.opening_narration, opening.tone);
           void gameplayApi.ackOpening(campaignId);
         }
         connect();
@@ -87,13 +108,26 @@ export function GamePage() {
     connect,
     disconnect,
     setError,
-    seedOpening,
-    connect,
-    disconnect,
+    seedHistory,
     setQuests,
     setSession,
     setStateSnapshot,
   ]);
+
+  useEffect(() => {
+    setCombatActive(Boolean(state?.combat));
+  }, [state?.combat, setCombatActive]);
+
+  useEffect(() => {
+    const last = [...messages].reverse().find((m) => m.kind === "dialogue" || m.kind === "narration" || m.kind === "player");
+    setDialogueActive(last?.kind === "dialogue");
+  }, [messages, setDialogueActive]);
+
+  useEffect(() => {
+    const loc = state?.current_location?.location_type || "";
+    const weather = state?.weather || "";
+    setAmbientHint([loc, weather].filter(Boolean).join(":") || null);
+  }, [state?.current_location?.location_type, state?.weather, setAmbientHint]);
 
   const connectionMeta = useMemo(() => {
     if (connection === "connected") return { label: "Connected", tone: "ok" as const };
@@ -128,75 +162,148 @@ export function GamePage() {
   }
 
   const snapshot = state;
+  const loc = snapshot.current_location;
+  const panelOpen = (id: PanelId) => openPanel === id;
+  const shouldRender = (id: PanelId) => Boolean(mountedPanels[id]) || openPanel === id;
 
   return (
-    <div className="h-full">
+    <div className="h-full min-h-0 overflow-hidden">
       <GameLayout
-        header={
-          <GameHeader
-            campaignName={snapshot.campaign_name || campaign.name}
-            time={snapshot.current_time || campaign.current_time}
-            weather={snapshot.weather || campaign.weather}
-            connectionLabel={connectionMeta.label}
-            connectionTone={connectionMeta.tone}
-          />
+        locationName={loc?.name || snapshot.campaign_name || campaign.name}
+        time={snapshot.current_time || campaign.current_time}
+        weather={snapshot.weather || campaign.weather}
+        gold={snapshot.character.gold}
+        hp={snapshot.character.hp}
+        maxHp={snapshot.character.max_hp}
+        xp={snapshot.character.xp}
+        level={snapshot.character.level}
+        connectionTone={connectionMeta.tone}
+        combatMode={Boolean(snapshot.combat)}
+        activePanel={openPanel}
+        onTogglePanel={togglePanel}
+        busy={busy}
+        suggestions={suggestedActions}
+        onAction={(action) => {
+          void sendAction(action);
+        }}
+        leftDock={
+          !snapshot.combat ? (
+            <div className="flex flex-col gap-4">
+              <CharacterPanel character={snapshot.character} />
+              <NPCPanel
+                npcs={snapshot.nearby_npcs.filter((n) => n.is_alive !== false)}
+                activeSpeaker={
+                  [...messages].reverse().find((m) => m.kind === "dialogue")?.speaker ?? null
+                }
+              />
+              <InventoryPanel items={snapshot.inventory} />
+            </div>
+          ) : null
         }
-        left={
-          <CharacterPanel
-            character={snapshot.character}
-            questsSlot={
-              <div className="mt-4">
-                <QuestPanel quests={quests.length ? quests : snapshot.active_quests} />
+        rightDock={
+          !snapshot.combat ? (
+            <div className="flex flex-col gap-4">
+              <div>
+                <p className="label-caps mb-1.5">Location</p>
+                {loc ? (
+                  <>
+                    <p className="display-text text-lg text-accent/90">{loc.name}</p>
+                    <p className="text-sm uppercase tracking-[0.14em] text-muted">
+                      {loc.location_type}
+                    </p>
+                    {loc.description ? (
+                      <p className="mt-2 text-base leading-relaxed text-muted">{loc.description}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted">Unknown region.</p>
+                )}
               </div>
-            }
-          />
+              <LocationArt
+                locationId={loc?.id}
+                locationName={loc?.name}
+                locationType={loc?.location_type}
+                variant="panel"
+              />
+            </div>
+          ) : null
         }
-        center={
-          <div className="flex h-full min-h-0 flex-col bg-[radial-gradient(ellipse_at_top,rgba(196,163,90,0.06),transparent_55%)]">
-            {error ? (
-              <div className="px-4 pt-3">
-                <ErrorState
-                  message={error}
-                  onRetry={() => {
-                    setError(null);
-                    connect();
+        overlays={
+          <>
+            {/* World map UI disabled for now — see BottomNav + VisualOrchestrator.on_campaign_created */}
+
+            {shouldRender("party") ? (
+              <SlideOver open={panelOpen("party")} title="Party" onClose={closePanel}>
+                <PartyPanel
+                  character={{
+                    id: snapshot.character.id,
+                    name: snapshot.character.name,
+                    hp: snapshot.character.hp,
+                    max_hp: snapshot.character.max_hp,
+                    ac: snapshot.character.ac,
+                    class_name: snapshot.character.class_name,
+                    level: snapshot.character.level,
                   }}
+                  onOpenCharacter={() => openPanelById("character")}
                 />
-              </div>
+              </SlideOver>
             ) : null}
-            <SceneLog messages={messages} streamingNarration={streamingNarration} />
-            {busy ? (
-              <div className="px-4 pb-2">
-                <LoadingState label="The dungeon master considers your fate…" />
-              </div>
+
+            {shouldRender("character") ? (
+              <SlideOver open={panelOpen("character")} title="Character" onClose={closePanel}>
+                <CharacterPanel character={snapshot.character} />
+              </SlideOver>
             ) : null}
-          </div>
+
+            {shouldRender("inventory") ? (
+              <SlideOver open={panelOpen("inventory")} title="Inventory" onClose={closePanel}>
+                <InventoryPanel items={snapshot.inventory} />
+              </SlideOver>
+            ) : null}
+
+            {shouldRender("quests") ? (
+              <SlideOver open={panelOpen("quests")} title="Quests" onClose={closePanel}>
+                <QuestPanel quests={quests.length ? quests : snapshot.active_quests} />
+              </SlideOver>
+            ) : null}
+
+            {shouldRender("journal") ? (
+              <SlideOver open={panelOpen("journal")} title="Journal" onClose={closePanel}>
+                <JournalPanel
+                  messages={messages}
+                  currentTime={snapshot.current_time || campaign.current_time}
+                />
+              </SlideOver>
+            ) : null}
+
+            <ToastStack />
+            <DiceFocus />
+          </>
         }
-        right={
-          <div className="space-y-5">
-            <LocationPanel
-              name={snapshot.current_location?.name}
-              description={snapshot.current_location?.description}
-              locationType={snapshot.current_location?.location_type}
+      >
+        {error ? (
+          <div className="px-4 pt-3">
+            <ErrorState
+              message={error}
+              onRetry={() => {
+                setError(null);
+                connect();
+              }}
             />
-            <NPCPanel npcs={snapshot.nearby_npcs} />
-            <InventoryPanel items={snapshot.inventory} />
-            <CombatPanel combat={snapshot.combat} />
-            <MapPanel locationName={snapshot.current_location?.name} />
-            <Link to="/" className="block text-xs text-muted hover:text-accent">
-              Leave table
-            </Link>
           </div>
-        }
-        footer={
-          <ActionInput
-            disabled={busy}
-            onSubmit={(action) => {
-              void sendAction(action);
-            }}
-          />
-        }
-      />
+        ) : null}
+        <StoryStage
+          locationId={loc?.id}
+          locationName={loc?.name}
+          locationType={loc?.location_type}
+          timeOfDay={snapshot.current_time || campaign.current_time}
+          messages={messages}
+          streamingNarration={streamingNarration}
+          nearbyNpcs={snapshot.nearby_npcs.filter((n) => n.is_alive !== false)}
+          combat={snapshot.combat}
+          busy={busy}
+        />
+      </GameLayout>
     </div>
   );
 }

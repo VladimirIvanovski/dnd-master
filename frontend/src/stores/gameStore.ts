@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { gameplayApi } from "../api";
 import { GameplaySocket } from "../lib/gameplaySocket";
 import { uid } from "../lib/id";
+import { stripEmbeddedDialogue } from "../lib/dedupeDialogue";
 import type {
   Campaign,
   Character,
@@ -12,6 +13,7 @@ import type {
   Quest,
   SceneMessage,
 } from "../types/game";
+import { useUiStore } from "./uiStore";
 
 type GameStore = {
   campaignId: string | null;
@@ -23,6 +25,7 @@ type GameStore = {
   messages: SceneMessage[];
   streamingNarration: string;
   latestDice: DiceResult[];
+  suggestedActions: string[];
   connection: ConnectionState;
   busy: boolean;
   error: string | null;
@@ -30,7 +33,17 @@ type GameStore = {
   setStateSnapshot: (state: GameStateSnapshot) => void;
   setQuests: (quests: Quest[]) => void;
   setError: (error: string | null) => void;
+  setSuggestedActions: (actions: string[]) => void;
   seedOpening: (narration: string, tone?: string) => void;
+  seedHistory: (
+    opening: {
+      narration?: string;
+      tone?: string;
+      dnaSummary?: string[];
+      dnaVersion?: number | null;
+    },
+    beats: Array<{ id: string; event_type: string; summary: string }>,
+  ) => void;
   connect: () => void;
   disconnect: () => void;
   sendAction: (action: string) => Promise<void>;
@@ -75,8 +88,15 @@ function applyResult(
   if (playerAction) {
     messages.push({ id: uid("player"), kind: "player", text: playerAction });
   }
+  // Show dice outcome immediately (before typewriter narration)
+  for (const dice of data.dice_results) {
+    messages.push({ id: uid("dice"), kind: "dice", result: dice });
+  }
   if (data.narration) {
-    messages.push({ id: uid("narration"), kind: "narration", text: data.narration });
+    const cleaned = stripEmbeddedDialogue(data.narration, data.dialogue || []);
+    if (cleaned.trim()) {
+      messages.push({ id: uid("narration"), kind: "narration", text: cleaned });
+    }
   }
   for (const line of data.dialogue) {
     messages.push({
@@ -86,9 +106,6 @@ function applyResult(
       text: line.text,
     });
   }
-  for (const dice of data.dice_results) {
-    messages.push({ id: uid("dice"), kind: "dice", result: dice });
-  }
   for (const event of data.applied_events) {
     messages.push({ id: uid("event"), kind: "event", text: event });
   }
@@ -96,7 +113,7 @@ function applyResult(
     messages.push({ id: uid("event"), kind: "event", text: `Applied: ${change}` });
   }
   for (const change of data.rejected_changes) {
-    messages.push({ id: uid("system"), kind: "system", text: `Rejected: ${change}` });
+    useUiStore.getState().pushNotification("Couldn't apply", change);
   }
 
   set({
@@ -105,9 +122,31 @@ function applyResult(
     messages,
     streamingNarration: "",
     latestDice: data.dice_results,
+    suggestedActions: (data.suggested_actions || []).slice(0, 3),
     busy: false,
     error: null,
   });
+
+  const ui = useUiStore.getState();
+  if (data.dice_results.length) {
+    ui.setDiceOverlay(data.dice_results[data.dice_results.length - 1]);
+  }
+  for (const event of data.applied_events) {
+    const lower = event.toLowerCase();
+    if (lower.includes("quest")) {
+      ui.pushNotification("Quest updated", event);
+    } else if (lower.includes("level")) {
+      ui.pushNotification("Level up", event);
+    } else if (lower.includes("discover") || lower.includes("location")) {
+      ui.pushNotification("Discovery", event);
+    }
+  }
+  for (const change of data.applied_changes) {
+    const lower = change.toLowerCase();
+    if (lower.includes("item") || lower.includes("gold") || lower.includes("gain")) {
+      ui.pushNotification("Loot", change);
+    }
+  }
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -120,6 +159,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   messages: [],
   streamingNarration: "",
   latestDice: [],
+  suggestedActions: [
+    "Look around carefully",
+    "Talk to someone nearby",
+    "Check your belongings",
+  ],
   connection: "idle",
   busy: false,
   error: null,
@@ -140,21 +184,46 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setError: (error) => set({ error, busy: false }),
 
-  seedOpening: (narration, tone) => {
+  setSuggestedActions: (actions) => set({ suggestedActions: actions.slice(0, 3) }),
+
+  seedOpening: (narration) => {
     if (!narration.trim()) return;
+    set({
+      messages: [{ id: uid("narration"), kind: "narration", text: narration.trim() }],
+    });
+  },
+
+  seedHistory: (opening, beats) => {
     const messages: SceneMessage[] = [];
-    if (tone?.trim()) {
+    if (opening.narration?.trim()) {
       messages.push({
-        id: uid("event"),
-        kind: "event",
-        text: `Campaign tone — ${tone.trim()}`,
+        id: uid("narration"),
+        kind: "narration",
+        text: opening.narration.trim(),
       });
     }
-    messages.push({ id: uid("narration"), kind: "narration", text: narration.trim() });
+    for (const beat of beats) {
+      if (beat.event_type === "PLAYER_ACTION") {
+        messages.push({ id: beat.id, kind: "player", text: beat.summary });
+      } else if (beat.event_type === "SCENE_NARRATION") {
+        messages.push({ id: beat.id, kind: "narration", text: beat.summary });
+      }
+      // Skip tone/DNA/system meta events in the main story view
+    }
     set({ messages });
   },
 
-  clearScene: () => set({ messages: [], streamingNarration: "", latestDice: [] }),
+  clearScene: () =>
+    set({
+      messages: [],
+      streamingNarration: "",
+      latestDice: [],
+      suggestedActions: [
+        "Look around carefully",
+        "Talk to someone nearby",
+        "Check your belongings",
+      ],
+    }),
 
   connect: () => {
     set({ connection: "connecting" });

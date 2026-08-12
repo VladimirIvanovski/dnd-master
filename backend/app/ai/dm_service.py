@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from app.ai.context_builder import ContextBuilder
 from app.ai.provider import LLMProvider
-from app.schemas.gameplay import DMResponse
+from app.schemas.gameplay import DMResponse, DiceResultOut
 from app.schemas.state import GameState
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,10 @@ class DMService:
         recent_events: list[str],
         memories: list[str],
         recent_conversation: list[str] | None = None,
+        event_director_note: str | None = None,
+        environment_note: str | None = None,
+        dice_results: list[DiceResultOut] | None = None,
+        rewrite_pass: bool = False,
     ) -> DMResponse:
         system, prompt = self.context_builder.build(
             state=state,
@@ -32,10 +36,18 @@ class DMService:
             recent_events=recent_events,
             memories=memories,
             recent_conversation=recent_conversation,
+            event_director_note=event_director_note,
+            environment_note=environment_note,
+            dice_results=dice_results,
+            rewrite_pass=rewrite_pass,
         )
         try:
             response = self.llm.generate_structured(prompt, DMResponse, system=system)
-            return DMResponse.model_validate(response.model_dump())
+            out = DMResponse.model_validate(response.model_dump())
+            if rewrite_pass:
+                # Never allow a second wave of dice in the same player request.
+                out.dice_requests = []
+            return out
         except ValidationError as exc:
             logger.warning("Invalid DM output, using safe fallback: %s", exc)
             return DMResponse(

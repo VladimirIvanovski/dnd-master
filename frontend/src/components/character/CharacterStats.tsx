@@ -8,6 +8,8 @@ type Props = {
   maxHp: number;
   ac: number;
   gold: number;
+  silver: number;
+  copper: number;
   abilities: Record<string, number>;
 };
 
@@ -21,6 +23,8 @@ export function CharacterStats({
   maxHp,
   ac,
   gold,
+  silver,
+  copper,
   abilities,
 }: Props) {
   const hpPct = Math.max(0, Math.min(100, (hp / Math.max(maxHp, 1)) * 100));
@@ -52,7 +56,11 @@ export function CharacterStats({
       <div className="grid grid-cols-3 gap-2 text-center text-sm">
         <Stat label="AC" value={ac} />
         <Stat label="XP" value={xp} />
-        <Stat label="Gold" value={gold} />
+        <Stat label="GP" value={gold} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-center text-sm">
+        <Stat label="SP" value={silver} />
+        <Stat label="CP" value={copper} />
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -66,9 +74,9 @@ export function CharacterStats({
 
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded border border-border bg-panel-2 px-2 py-1.5">
-      <div className="text-muted">{label}</div>
-      <div className="font-medium">{value}</div>
+    <div className="rounded border border-border bg-panel-2 px-1.5 py-1">
+      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-sm font-medium">{value}</div>
     </div>
   );
 }

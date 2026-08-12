@@ -11,10 +11,31 @@ class LocationRepository:
         self.db = db
 
     def create(self, campaign_id: uuid.UUID, name: str, **kwargs) -> Location:
+        from app.visual.hashing import normalize_name
+
+        kwargs.setdefault("normalized_name", normalize_name(name))
         loc = Location(campaign_id=campaign_id, name=name, **kwargs)
         self.db.add(loc)
         self.db.flush()
+        self.db.info.setdefault("pending_visuals", []).append(("location", loc.id))
         return loc
+
+    def find_by_normalized(
+        self,
+        campaign_id: uuid.UUID,
+        normalized_name: str,
+        *,
+        parent_id: uuid.UUID | None = None,
+    ) -> Location | None:
+        stmt = select(Location).where(
+            Location.campaign_id == campaign_id,
+            Location.normalized_name == normalized_name,
+        )
+        if parent_id is None:
+            stmt = stmt.where(Location.parent_id.is_(None))
+        else:
+            stmt = stmt.where(Location.parent_id == parent_id)
+        return self.db.scalar(stmt)
 
     def get(self, location_id: uuid.UUID) -> Location | None:
         return self.db.get(Location, location_id)
@@ -28,6 +49,7 @@ class NPCRepository:
         npc = NPC(campaign_id=campaign_id, name=name, **kwargs)
         self.db.add(npc)
         self.db.flush()
+        self.db.info.setdefault("pending_visuals", []).append(("npc", npc.id))
         return npc
 
     def find_at_location(

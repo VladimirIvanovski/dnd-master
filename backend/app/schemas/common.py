@@ -11,7 +11,6 @@ class ORMModel(BaseModel):
 class CampaignCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     description: str = ""
-    owner_username: str = "player"
 
 
 class CampaignOut(ORMModel):
@@ -29,7 +28,6 @@ class CharacterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     race: str = "Human"
     class_name: str = "Fighter"
-    owner_username: str = "player"
     strength: int = 10
     dexterity: int = 10
     constitution: int = 10
@@ -51,6 +49,8 @@ class CharacterOut(ORMModel):
     max_hp: int
     ac: int
     gold: int
+    silver: int = 0
+    copper: int = 0
     location_id: UUID | None
     strength: int
     dexterity: int

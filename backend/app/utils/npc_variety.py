@@ -70,7 +70,7 @@ def random_npc_seed(rng: random.Random | None = None, *, avoid_names: set[str] |
     )
 
 
-def random_starter_npcs(count: int = 2, rng: random.Random | None = None) -> list[NpcSeed]:
+def random_starter_npcs(count: int = 1, rng: random.Random | None = None) -> list[NpcSeed]:
     rng = rng or random.Random()
     count = max(1, min(count, 3))
     used: set[str] = set()

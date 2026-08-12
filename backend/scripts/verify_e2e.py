@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 from urllib.error import HTTPError
 
 API = "http://127.0.0.1:8000"
-HEADERS = {"Content-Type": "application/json", "X-Username": "player"}
+HEADERS: dict[str, str] = {"Content-Type": "application/json"}
 
 
 def call(method: str, path: str, data=None):
@@ -31,11 +32,30 @@ def main():
     health = call("GET", "/health")
     assert health["database"] is True, health
 
-    campaign = call("POST", "/api/campaigns", {"name": f"E2E {__import__('time').time()}", "description": "verify"})
-    character = call("POST", "/api/characters", {"campaign_id": campaign["id"], "name": "Kael", "class_name": "Fighter"})
-    state = call("GET", f"/api/gameplay/state?campaign_id={campaign['id']}&character_id={character['id']}")
-    assert state["current_location"]["name"] == "Starting Village"
-    assert any(n["name"] == "Old Marta" for n in state["nearby_npcs"])
+    username = f"e2e_{int(time.time())}"
+    auth = call(
+        "POST",
+        "/api/auth/register",
+        {"username": username, "password": "password123"},
+    )
+    HEADERS["Authorization"] = f"Bearer {auth['access_token']}"
+
+    campaign = call(
+        "POST",
+        "/api/campaigns",
+        {"name": f"E2E {time.time()}", "description": "verify"},
+    )
+    character = call(
+        "POST",
+        "/api/characters",
+        {"campaign_id": campaign["id"], "name": "Kael", "class_name": "Fighter"},
+    )
+    state = call(
+        "GET",
+        f"/api/gameplay/state?campaign_id={campaign['id']}&character_id={character['id']}",
+    )
+    assert state["current_location"]["name"]
+    assert len(state["nearby_npcs"]) >= 1
 
     action(campaign["id"], character["id"], "I approach and meet Elira")
     action(campaign["id"], character["id"], "I promise to help Elira")
@@ -58,30 +78,42 @@ def main():
     assert dice["dice_results"], "expected backend dice"
     assert "success" in dice["narration"].lower() or "failure" in dice["narration"].lower()
 
-    # Resume APIs
     chars = call("GET", f"/api/characters?campaign_id={campaign['id']}")
     assert any(c["id"] == character["id"] for c in chars)
-    resumed = call("GET", f"/api/gameplay/state?campaign_id={campaign['id']}&character_id={character['id']}")
+    resumed = call(
+        "GET",
+        f"/api/gameplay/state?campaign_id={campaign['id']}&character_id={character['id']}",
+    )
     assert any(i["name"] == "Silver Key" for i in resumed["inventory"])
-    assert resumed["current_location"]["name"] == "Starting Village"
 
+    other = call(
+        "POST",
+        "/api/auth/register",
+        {"username": f"intruder_{int(time.time())}", "password": "password123"},
+    )
     forbidden = False
     try:
         req = urllib.request.Request(
             f"{API}/api/campaigns/{campaign['id']}",
-            headers={"Content-Type": "application/json", "X-Username": "intruder"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {other['access_token']}",
+            },
         )
         urllib.request.urlopen(req)
     except HTTPError as exc:
         forbidden = exc.code == 403
     assert forbidden, "expected ownership 403"
 
-    print("E2E_OK", {
-        "campaign": campaign["id"],
-        "character": character["id"],
-        "inventory": [i["name"] for i in resumed["inventory"]],
-        "quests": [q["title"] for q in resumed["active_quests"]],
-    })
+    print(
+        "E2E_OK",
+        {
+            "campaign": campaign["id"],
+            "character": character["id"],
+            "inventory": [i["name"] for i in resumed["inventory"]],
+            "quests": [q["title"] for q in resumed["active_quests"]],
+        },
+    )
 
 
 if __name__ == "__main__":

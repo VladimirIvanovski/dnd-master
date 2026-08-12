@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import re
+import secrets
 from dataclasses import dataclass
 
 
@@ -16,6 +17,15 @@ class DiceRoll:
     total: int
 
 
+class SecureRandom:
+    """Cryptographically strong randint-compatible RNG for live rolls."""
+
+    def randint(self, a: int, b: int) -> int:
+        if b < a:
+            raise ValueError("empty range")
+        return secrets.randbelow(b - a + 1) + a
+
+
 def parse_dice(notation: str) -> tuple[int, int, int]:
     match = DICE_RE.match(notation)
     if not match:
@@ -28,8 +38,8 @@ def parse_dice(notation: str) -> tuple[int, int, int]:
     return count, sides, modifier
 
 
-def roll_dice(notation: str, rng: random.Random | None = None) -> DiceRoll:
-    rng = rng or random.Random()
+def roll_dice(notation: str, rng: random.Random | SecureRandom | None = None) -> DiceRoll:
+    rng = rng or SecureRandom()
     count, sides, modifier = parse_dice(notation)
     rolls = [rng.randint(1, sides) for _ in range(count)]
     return DiceRoll(notation=notation, rolls=rolls, modifier=modifier, total=sum(rolls) + modifier)

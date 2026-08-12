@@ -124,6 +124,8 @@ class GameStateLoader:
                 max_hp=character.max_hp,
                 ac=character.ac,
                 gold=character.gold,
+                silver=getattr(character, "silver", 0) or 0,
+                copper=getattr(character, "copper", 0) or 0,
                 abilities={
                     "strength": character.strength,
                     "dexterity": character.dexterity,

@@ -29,14 +29,18 @@ class UserRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_or_create(self, username: str, display_name: str | None = None) -> User:
-        user = self.db.scalar(select(User).where(User.username == username))
-        if user:
-            return user
-        user = User(username=username, display_name=display_name or username)
+    def get(self, user_id: uuid.UUID) -> User | None:
+        return self.db.get(User, user_id)
+
+    def get_by_username(self, username: str) -> User | None:
+        return self.db.scalar(select(User).where(User.username == username))
+
+    def create(self, username: str, password_hash: str, display_name: str | None = None) -> User:
+        user = User(
+            username=username,
+            display_name=display_name or username,
+            password_hash=password_hash,
+        )
         self.db.add(user)
         self.db.flush()
         return user
-
-    def get(self, user_id: uuid.UUID) -> User | None:
-        return self.db.get(User, user_id)

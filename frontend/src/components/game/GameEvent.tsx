@@ -4,8 +4,8 @@ type Props = {
 
 export function GameEvent({ text }: Props) {
   return (
-    <div className="rounded border border-border/80 bg-ink/40 px-3 py-1.5 text-xs uppercase tracking-wide text-muted">
+    <p className="mx-auto max-w-xl text-center text-[0.7rem] uppercase tracking-[0.16em] text-muted/80">
       {text}
-    </div>
+    </p>
   );
 }

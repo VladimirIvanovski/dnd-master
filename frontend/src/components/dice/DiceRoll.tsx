@@ -2,26 +2,40 @@ import type { DiceResult } from "../../types/game";
 
 type Props = {
   result: DiceResult;
+  compact?: boolean;
 };
 
+/** Story-log outcome with roll formula + Success / Failure seal. */
 export function DiceRoll({ result }: Props) {
-  const outcome =
-    result.success === true ? "Success" : result.success === false ? "Failure" : null;
+  const ok = result.success === true;
+  const fail = result.success === false;
+  const natural = result.natural ?? result.rolls[0];
+  const mod = result.modifier ?? 0;
+  const modPart = mod === 0 ? "" : ` ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)}`;
+  const formula =
+    natural != null ? `${natural}${modPart} = ${result.total}` : `${result.total}`;
+  const vsDc = result.dc != null ? ` vs DC ${result.dc}` : "";
+  const label = (result.skill || result.purpose || "Check").trim();
 
   return (
-    <div className="glow-accent mx-auto w-full max-w-xs animate-[dice-pop_0.55s_ease-out] rounded-lg border border-accent/30 bg-panel-2 px-4 py-3 text-center">
-      <p className="text-xs uppercase tracking-[0.2em] text-muted">
-        {result.purpose || "Dice Roll"}
+    <div
+      className={`check-seal mx-auto max-w-md ${
+        ok ? "is-success" : fail ? "is-failure" : ""
+      }`}
+    >
+      <p className="check-seal-label">{label}</p>
+      <p className="check-seal-formula">
+        {formula}
+        {vsDc}
       </p>
-      <div className="display-text mt-2 space-y-1 text-lg">
-        <div className="animate-[dice-spin_0.45s_ease-out]">{result.notation}</div>
-        <div className="text-sm text-muted">rolls: {result.rolls.join(", ") || "—"}</div>
-        <div className="border-t border-border pt-1 text-accent">= {result.total}</div>
-      </div>
-      {outcome ? (
-        <p className={`mt-2 text-sm ${result.success ? "text-success" : "text-danger"}`}>
-          {outcome}
-        </p>
+      <p className="check-seal-outcome">
+        {ok ? "Success" : fail ? "Failure" : "Rolled"}
+      </p>
+      {result.critical === "natural_20" ? (
+        <p className="check-seal-crit">Natural twenty</p>
+      ) : null}
+      {result.critical === "natural_1" ? (
+        <p className="check-seal-crit">Natural one</p>
       ) : null}
     </div>
   );

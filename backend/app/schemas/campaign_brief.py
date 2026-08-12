@@ -15,7 +15,11 @@ class CampaignBrief(BaseModel):
     tone: str = Field(description="1-2 sentences describing mood, genre, and stakes")
     themes: list[str] = Field(default_factory=list, description="3-5 short theme tags")
     opening_narration: str = Field(
-        description="Opening scene the player sees when entering the campaign (1-3 short paragraphs)"
+        description=(
+            "Clear opening scene (3–6 short sentences/paragraphs): where the player is, "
+            "concrete look/atmosphere, who/what is nearby, what is happening now, then room to act. "
+            "Simple language — not poetic vagueness."
+        )
     )
     starting_location_name: str = Field(default="Starting Settlement")
     starting_location_description: str = Field(
@@ -23,5 +27,5 @@ class CampaignBrief(BaseModel):
     )
     starter_npcs: list[StarterNpc] = Field(
         default_factory=list,
-        description="2-3 unique local NPCs with original names and roles fitting the setting",
+        description="Exactly 1 unique local NPC with an original name and role fitting the setting",
     )

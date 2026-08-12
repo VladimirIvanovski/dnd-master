@@ -45,8 +45,12 @@ export class GameplaySocket {
       return;
     }
 
-    const username = localStorage.getItem("dnd-username") || "player";
-    const url = `${wsBase()}/ws/gameplay?username=${encodeURIComponent(username)}`;
+    const token = localStorage.getItem("dnd-token");
+    if (!token) {
+      this.handlers.onError?.("Not authenticated");
+      return;
+    }
+    const url = `${wsBase()}/ws/gameplay?token=${encodeURIComponent(token)}`;
     this.socket = new WebSocket(url);
 
     this.socket.onopen = () => {

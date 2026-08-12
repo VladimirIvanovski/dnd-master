@@ -9,6 +9,14 @@ from app.database.models.npc import NPC
 from app.database.models.quest import Quest, QuestObjective
 from app.database.models.relationship import Relationship
 from app.database.models.user import User
+from app.database.models.assets import (
+    AssetGenerationJob,
+    CharacterAppearance,
+    ItemVisual,
+    LocationVisual,
+    NpcAppearance,
+    StoredAsset,
+)
 
 __all__ = [
     "User",
@@ -25,4 +33,10 @@ __all__ = [
     "Relationship",
     "CombatSession",
     "Combatant",
+    "StoredAsset",
+    "AssetGenerationJob",
+    "LocationVisual",
+    "NpcAppearance",
+    "CharacterAppearance",
+    "ItemVisual",
 ]

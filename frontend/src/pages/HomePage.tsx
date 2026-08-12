@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { campaignApi, characterApi } from "../api";
+import { authApi, campaignApi, characterApi } from "../api";
+import { getStoredUser } from "../api/client";
 import type { Campaign, Character } from "../types/game";
 import { ErrorState } from "../components/common/ErrorState";
 import { LoadingState } from "../components/common/LoadingState";
@@ -32,6 +33,11 @@ export function HomePage() {
   const [quickStarting, setQuickStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const last = readSession();
+  const user = getStoredUser();
+  const canResume =
+    !loading &&
+    !!last &&
+    campaigns.some((c) => c.id === last.campaignId);
 
   const load = async () => {
     setLoading(true);
@@ -56,6 +62,14 @@ export function HomePage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    const session = readSession();
+    if (session && !campaigns.some((c) => c.id === session.campaignId)) {
+      localStorage.removeItem("dnd-session");
+    }
+  }, [loading, campaigns]);
 
   async function quickStart() {
     setQuickStarting(true);
@@ -85,9 +99,26 @@ export function HomePage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-4xl flex-col justify-center px-6 py-12">
+    <div className="mx-auto flex min-h-full max-w-4xl flex-col justify-center overflow-y-auto px-6 py-12">
       <p className="text-xs uppercase tracking-[0.35em] text-muted">Tabletop Reality Engine</p>
-      <h1 className="display-text mt-3 text-5xl text-accent md:text-6xl">D&D Master</h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="display-text text-5xl text-accent md:text-6xl">D&D Master</h1>
+        {user ? (
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-muted">{user.display_name || user.username}</span>
+            <button
+              type="button"
+              className="text-accent hover:underline"
+              onClick={() => {
+                authApi.logout();
+                navigate("/login", { replace: true });
+              }}
+            >
+              Log out
+            </button>
+          </div>
+        ) : null}
+      </div>
       <p className="story-text mt-4 max-w-2xl text-lg text-muted">
         A persistent campaign world. The engine keeps the rules. The dungeon master narrates the
         consequences.
@@ -108,7 +139,7 @@ export function HomePage() {
         >
           New Campaign
         </Link>
-        {last ? (
+        {canResume && last ? (
           <button
             type="button"
             disabled={quickStarting}

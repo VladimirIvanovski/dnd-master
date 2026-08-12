@@ -1,18 +1,16 @@
 from app.game.engine import GameEngine
-from app.schemas.common import CampaignCreate, CharacterCreate
 from app.schemas.gameplay import DialogueLine, StateChange
-from app.services.campaign import CampaignService, CharacterService
 from app.services.gameplay import GameplayService
 from app.game.state import GameStateLoader
 
 
 def _start(db):
-    campaign = CampaignService(db).create(CampaignCreate(name="NPC Item Fix", description="t"))
-    character = CharacterService(db).create(
-        CharacterCreate(campaign_id=campaign.id, name="Baelor")
-    )
-    return campaign, character
+    from tests.conftest import start_campaign
 
+    _user, campaign, character = start_campaign(db, username="baelor_owner")
+    character.name = "Baelor"
+    db.commit()
+    return campaign, character
 
 def test_add_item_accepts_alternate_keys(db):
     campaign, character = _start(db)
@@ -47,3 +45,37 @@ def test_spawn_npc_and_dialogue_speakers(db):
     assert any("Khalid" in c for c in applied.applied)
     refreshed = GameStateLoader(db).load(campaign.id, character.id)
     assert any(n.name == "Khalid" for n in refreshed.nearby_npcs)
+
+
+from uuid import uuid4
+
+from app.schemas.gameplay import DialogueLine, StateChange
+from app.schemas.state import CharacterState, GameState
+from app.services.gameplay import GameplayService
+
+
+def test_no_auto_spawn_when_scene_empty():
+    ch = CharacterState(
+        id=uuid4(),
+        name="Hero",
+        race="Human",
+        class_name="Fighter",
+        level=1,
+        xp=0,
+        hp=10,
+        max_hp=10,
+        ac=12,
+        gold=0,
+        abilities={},
+    )
+    state = GameState(
+        campaign_id=uuid4(),
+        campaign_name="Test",
+        character=ch,
+        nearby_npcs=[],
+    )
+    changes = GameplayService._dialogue_npcs_as_changes(
+        state,
+        [DialogueLine(speaker="Ghost Stranger", text="Hello?")],
+    )
+    assert changes == []

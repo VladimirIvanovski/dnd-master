@@ -1,5 +1,9 @@
 import json
+import time
 import urllib.request
+
+
+HEADERS = {"Content-Type": "application/json"}
 
 
 def call(method, path, data=None):
@@ -8,13 +12,19 @@ def call(method, path, data=None):
         f"http://127.0.0.1:8000{path}",
         data=body,
         method=method,
-        headers={"Content-Type": "application/json"} if body else {},
+        headers=HEADERS,
     )
     with urllib.request.urlopen(req) as resp:
         return json.load(resp)
 
 
 print("HEALTH", call("GET", "/health"))
+auth = call(
+    "POST",
+    "/api/auth/register",
+    {"username": f"smoke_{int(time.time())}", "password": "password123"},
+)
+HEADERS["Authorization"] = f"Bearer {auth['access_token']}"
 campaign = call("POST", "/api/campaigns", {"name": "Live Verify", "description": "smoke"})
 print("CAMPAIGN", campaign["id"], campaign["name"])
 character = call(
@@ -29,7 +39,7 @@ result = call(
     {
         "campaign_id": campaign["id"],
         "character_id": character["id"],
-        "action": "Explore the village and greet Old Marta",
+        "action": "Explore the village and greet the locals",
     },
 )
 print("NARRATION", result["narration"][:120])

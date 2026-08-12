@@ -62,12 +62,32 @@ class MockLLMProvider(LLMProvider):
         system: str | None = None,
     ) -> T:
         if self.fixed_response and schema is DMResponse:
-            return self.fixed_response  # type: ignore[return-value]
+            if "REWRITE PASS" in prompt or "Resolved dice rolls" in prompt:
+                data = self.fixed_response.model_dump()
+                data["dice_requests"] = []
+                narration = data.get("narration") or ""
+                if " SUCCESS" in prompt and " FAILURE" not in prompt.split("SUCCESS")[-1][:80]:
+                    # Prefer explicit per-line success markers from context
+                    pass
+                if " FAILURE" in prompt and "success" not in narration.lower():
+                    data["narration"] = (
+                        narration.rstrip() + " It doesn't work."
+                    )
+                elif " SUCCESS" in prompt:
+                    data["narration"] = (
+                        narration.rstrip() + " It works."
+                    )
+                if "critical=natural_20" in prompt:
+                    data["narration"] = data["narration"].rstrip() + " Fortune smiles with startling force."
+                if "critical=natural_1" in prompt:
+                    data["narration"] = data["narration"].rstrip() + " Everything goes wrong at once."
+                return self._with_suggestions(DMResponse.model_validate(data), prompt)  # type: ignore[return-value]
+            return self._with_suggestions(self.fixed_response, prompt)  # type: ignore[return-value]
         if schema is CampaignBrief:
             name = "the campaign"
             if "Campaign name:" in prompt:
                 name = prompt.split("Campaign name:", 1)[1].splitlines()[0].strip() or name
-            seeds = random_starter_npcs(2)
+            seeds = random_starter_npcs(1)
             return CampaignBrief(  # type: ignore[return-value]
                 tone=f"A grounded, atmospheric adventure set in {name}.",
                 themes=["mystery", "survival", "consequence"],
@@ -89,7 +109,7 @@ class MockLLMProvider(LLMProvider):
                 ],
             )
         if schema is DMResponse:
-            return self._build(prompt)  # type: ignore[return-value]
+            return self._with_suggestions(self._build(prompt), prompt)  # type: ignore[return-value]
         return schema.model_validate({})
 
     def stream(self, prompt: str, *, system: str | None = None) -> Iterator[str]:
@@ -102,6 +122,9 @@ class MockLLMProvider(LLMProvider):
         low = action.lower()
         memories = _memories(prompt)
         npcs = _nearby_npcs(prompt)
+
+        if "REWRITE PASS" in prompt or "Resolved dice rolls" in prompt:
+            return self._rewrite_with_dice(action, prompt)
 
         # Memory recall questions — answer from retrieved memories only.
         if any(q in low for q in ("who gave", "what did i promise", "what did i", "remind me", "do you remember")):
@@ -199,28 +222,134 @@ class MockLLMProvider(LLMProvider):
                 ],
             )
 
-        if any(w in low for w in ("sneak", "persuade", "lockpick", "climb", "search", "check")):
-            skill = "dexterity" if any(w in low for w in ("sneak", "lockpick")) else "charisma" if "persuade" in low else "wisdom"
+        if any(w in low for w in ("sneak", "persuade", "lockpick", "climb", "search", "check", "investigate", "pick the lock", "jump")):
+            skill = (
+                "stealth"
+                if "sneak" in low
+                else "persuasion"
+                if "persuade" in low
+                else "dexterity"
+                if any(w in low for w in ("lockpick", "pick the lock", "jump", "climb"))
+                else "investigation"
+                if any(w in low for w in ("search", "investigate"))
+                else "wisdom"
+            )
             return DMResponse(
-                narration=f"You attempt it carefully. The outcome hangs on a {skill} check.",
-                dice_requests=[DiceRequest(kind="d20", notation="1d20", purpose=f"{skill} check", skill=skill, dc=12)],
+                narration=f"You commit to the attempt. Fate waits on the die.",
+                dice_requests=[
+                    DiceRequest(
+                        kind="d20",
+                        notation="1d20",
+                        purpose=f"{skill} check",
+                        skill=skill,
+                        dc=12,
+                    )
+                ],
                 events=[ProposedEvent(event_type="DISCOVERY_MADE", summary=f"Attempted check: {action}", importance=4)],
                 state_changes=[
                     StateChange(action="gain_xp", params={"amount": 5, "requires_success": True}),
                 ],
             )
 
-        # Default exploration — mention nearby NPC if present.
+        # Soft event director hint — weave if present, never label as random.
+        director = ""
+        if "Event director soft suggestion" in prompt:
+            director = " " + self._director_color(prompt)
+
+        # Avoid re-describing the location when guidance says so.
+        avoid_env = "Do NOT re-describe" in prompt or "Environment already established" in prompt
+        if avoid_env:
+            base = f"You {action[0].lower() + action[1:] if action else 'act'}."
+        else:
+            base = f"You take in the place, then {action[0].lower() + action[1:] if action else 'look around'}."
         npc_bit = f" Nearby, {npcs[0]} watches." if npcs else ""
         mem_bit = f" You recall: {memories[0]}" if memories else ""
         return DMResponse(
-            narration=f"You {action[0].lower() + action[1:] if action else 'look around'}.{npc_bit}{mem_bit}",
+            narration=f"{base}{npc_bit}{mem_bit}{director}".strip(),
             dialogue=[],
             events=[ProposedEvent(event_type="DISCOVERY_MADE", summary=f"Player action: {action}", importance=4)],
             memory_candidates=[
                 MemoryCandidate(content=f"The player: {action}", importance=4),
             ],
         )
+
+    def _with_suggestions(self, resp: DMResponse, prompt: str) -> DMResponse:
+        existing = [s.strip() for s in (resp.suggested_actions or []) if str(s).strip()]
+        if len(existing) >= 3:
+            return resp.model_copy(update={"suggested_actions": existing[:3]})
+        action = _player_action(prompt)
+        npcs = _nearby_npcs(prompt)
+        low = action.lower()
+        opts = list(existing)
+        if npcs:
+            opts.append(f"Speak with {npcs[0].split('—')[0].strip()}")
+        if any(w in low for w in ("attack", "fight", "combat")):
+            opts.extend(["Press the attack", "Fall back and regroup", "Call for a parley"])
+        elif any(w in low for w in ("sneak", "hide", "stealth")):
+            opts.extend(["Keep moving quietly", "Find a better vantage", "Listen for patrols"])
+        else:
+            opts.extend(
+                [
+                    "Ask a pointed question",
+                    "Inspect something unusual nearby",
+                    "Move toward the next landmark",
+                ]
+            )
+        # Dedupe preserving order
+        seen: set[str] = set()
+        clean: list[str] = []
+        for o in opts:
+            o = " ".join(o.split()).strip()
+            if o and o.lower() not in seen:
+                seen.add(o.lower())
+                clean.append(o)
+            if len(clean) >= 3:
+                break
+        while len(clean) < 3:
+            clean.append(
+                ["Look around carefully", "Check your belongings", "Wait and listen"][len(clean)]
+            )
+        return resp.model_copy(update={"suggested_actions": clean[:3]})
+
+    def _rewrite_with_dice(self, action: str, prompt: str) -> DMResponse:
+        success = " SUCCESS" in prompt
+        failure = " FAILURE" in prompt
+        crit20 = "critical=natural_20" in prompt
+        crit1 = "critical=natural_1" in prompt
+        if failure and not success:
+            narr = f"You try: {action}. The attempt fails."
+        elif success:
+            narr = f"You try: {action}. It works."
+        else:
+            narr = f"You resolve the attempt: {action}."
+        if crit20:
+            narr += " Fortune smiles with startling force."
+        if crit1:
+            narr += " Everything goes wrong at once."
+        return DMResponse(
+            narration=narr,
+            dice_requests=[],
+            events=[ProposedEvent(event_type="DISCOVERY_MADE", summary=f"Resolved check: {action}", importance=4)],
+            state_changes=[
+                StateChange(action="gain_xp", params={"amount": 5, "requires_success": True}),
+            ],
+        )
+
+    @staticmethod
+    def _director_color(prompt: str) -> str:
+        block = _section(prompt, "Event director soft suggestion", "Relevant memories:")
+        low = block.lower()
+        if "distant scream" in low or "heard but not seen" in low:
+            return "Somewhere out of sight, a sound raises the hair on your neck."
+        if "drunk" in low or "harmless weird" in low or "false alarm" in low:
+            return "Something faintly ridiculous distracts a passerby for a moment."
+        if "merchant" in low or "deal" in low:
+            return "A vendor's call cuts across the moment with an offer."
+        if "quiet stretch" in low:
+            return "For a breath, nothing demands your attention."
+        if "footprint" in low or "clue" in low:
+            return "A detail on the ground catches your eye if you care to notice."
+        return "Life continues around you in a small, unexpected way."
 
     def _memory_answer(self, action: str, memories: list[str]) -> DMResponse:
         low = action.lower()

@@ -57,6 +57,8 @@ class DMResponse(BaseModel):
     memory_candidates: list[MemoryCandidate] = Field(default_factory=list)
     quest_updates: list[QuestUpdateProposal] = Field(default_factory=list)
     npc_updates: list[NPCUpdateProposal] = Field(default_factory=list)
+    # Exactly 3 short player options when possible (UI shows + custom).
+    suggested_actions: list[str] = Field(default_factory=list, max_length=3)
 
 
 class PlayerActionRequest(BaseModel):
@@ -71,6 +73,12 @@ class DiceResultOut(BaseModel):
     rolls: list[int]
     purpose: str = ""
     success: bool | None = None
+    ability: str | None = None
+    skill: str | None = None
+    modifier: int = 0
+    dc: int | None = None
+    natural: int | None = None
+    critical: str | None = None  # natural_20 | natural_1 | None
 
 
 class GameplayResponse(BaseModel):
@@ -81,3 +89,4 @@ class GameplayResponse(BaseModel):
     applied_changes: list[str] = Field(default_factory=list)
     rejected_changes: list[str] = Field(default_factory=list)
     state_snapshot: dict = Field(default_factory=dict)
+    suggested_actions: list[str] = Field(default_factory=list)

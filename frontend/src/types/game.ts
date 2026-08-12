@@ -20,6 +20,8 @@ export type Character = {
   max_hp: number;
   ac: number;
   gold: number;
+  silver?: number;
+  copper?: number;
   location_id: string | null;
   strength: number;
   dexterity: number;
@@ -67,6 +69,12 @@ export type DiceResult = {
   rolls: number[];
   purpose: string;
   success: boolean | null;
+  ability?: string | null;
+  skill?: string | null;
+  modifier?: number;
+  dc?: number | null;
+  natural?: number | null;
+  critical?: string | null;
 };
 
 export type GameStateSnapshot = {
@@ -83,6 +91,8 @@ export type GameStateSnapshot = {
     max_hp: number;
     ac: number;
     gold: number;
+    silver?: number;
+    copper?: number;
     abilities: Record<string, number>;
   };
   current_location: {
@@ -139,6 +149,7 @@ export type GameplayResponse = {
   applied_changes: string[];
   rejected_changes: string[];
   state_snapshot: GameStateSnapshot;
+  suggested_actions?: string[];
 };
 
 export type SceneMessage =
