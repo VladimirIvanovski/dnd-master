@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useRevealText } from "../../hooks/useRevealText";
-import { StoryMarkup } from "./StoryMarkup";
+import { DustRevealText, StoryMarkup } from "./StoryMarkup";
 
 type Props = {
   text: string;
@@ -20,8 +20,8 @@ export function Narration({
   const active = reveal && !streaming;
   const { shown, done, skip } = useRevealText(text, {
     active,
-    msPerChunk: 28,
-    wordsPerChunk: 1,
+    msPerChunk: 25,
+    charsPerChunk: 1,
     onDone: onRevealDone,
   });
 
@@ -31,15 +31,22 @@ export function Narration({
 
   const display = streaming || !active ? text : shown;
   const useDrop = !streaming && (!active || done) && text.trim().length > 90;
+  const dusting = active && !done;
 
   return (
     <div
       className={`story-text text-[1.14rem] leading-[1.85] text-parchment/92 md:text-[1.22rem] md:leading-[1.9] ${
-        streaming || (active && !done) ? "opacity-95" : ""
+        streaming || dusting ? "opacity-95" : ""
       }`}
     >
-      <StoryMarkup text={display} dropCap={useDrop} />
-      {(streaming || (active && !done)) && display ? (
+      {dusting ? (
+        <p className="story-para">
+          <DustRevealText text={display} />
+        </p>
+      ) : (
+        <StoryMarkup text={display} dropCap={useDrop} />
+      )}
+      {(streaming || dusting) && display ? (
         <span className="story-reveal-caret" aria-hidden />
       ) : null}
     </div>

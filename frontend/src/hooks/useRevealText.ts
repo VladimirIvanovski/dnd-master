@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { splitCharChunks, splitChunks } from "../lib/reveal";
 
-/** Reveal text in small word chunks; call skip() to finish instantly. */
+/** Reveal text in small chunks; call skip() to finish instantly. */
 export function useRevealText(
   fullText: string,
   {
     active,
-    msPerChunk = 32,
-    wordsPerChunk = 2,
+    msPerChunk = 48,
+    wordsPerChunk = 1,
+    charsPerChunk,
     onDone,
   }: {
     active: boolean;
     msPerChunk?: number;
     wordsPerChunk?: number;
+    /** When set, reveal by characters instead of words. */
+    charsPerChunk?: number;
     onDone?: () => void;
   },
 ) {
@@ -58,7 +62,10 @@ export function useRevealText(
       return;
     }
 
-    const parts = splitChunks(fullText, wordsPerChunk);
+    const parts =
+      charsPerChunk != null
+        ? splitCharChunks(fullText, charsPerChunk)
+        : splitChunks(fullText, wordsPerChunk);
     let idx = 0;
     timerRef.current = window.setInterval(() => {
       idx += 1;
@@ -67,27 +74,7 @@ export function useRevealText(
     }, msPerChunk);
 
     return clearTimer;
-  }, [fullText, active, msPerChunk, wordsPerChunk, finish]);
+  }, [fullText, active, msPerChunk, wordsPerChunk, charsPerChunk, finish]);
 
   return { shown, done, skip: finish };
-}
-
-function splitChunks(text: string, wordsPerChunk: number): string[] {
-  if (!text) return [];
-  const tokens = text.match(/\S+\s*|\s+/g);
-  if (!tokens) return [text];
-  const chunks: string[] = [];
-  let buf = "";
-  let words = 0;
-  for (const t of tokens) {
-    buf += t;
-    if (/\S/.test(t)) words += 1;
-    if (words >= wordsPerChunk) {
-      chunks.push(buf);
-      buf = "";
-      words = 0;
-    }
-  }
-  if (buf) chunks.push(buf);
-  return chunks;
 }

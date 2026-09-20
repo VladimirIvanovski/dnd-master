@@ -18,6 +18,7 @@ export type Character = {
   xp: number;
   hp: number;
   max_hp: number;
+  temp_hp?: number;
   ac: number;
   gold: number;
   silver?: number;
@@ -89,17 +90,30 @@ export type GameStateSnapshot = {
     xp: number;
     hp: number;
     max_hp: number;
+    temp_hp?: number;
     ac: number;
     gold: number;
     silver?: number;
     copper?: number;
     abilities: Record<string, number>;
+    conditions?: string[];
+    stamina?: number;
+    hunger?: number;
+    thirst?: number;
+    carry_weight?: number;
+    carry_capacity?: number;
+    known_facts?: string[];
+    death_saves_success?: number;
+    death_saves_fail?: number;
   };
   current_location: {
     id: string;
     name: string;
     description: string;
     location_type: string;
+    lighting?: string;
+    containers?: Array<{ id: string; name: string; locked: boolean }>;
+    traps?: Array<{ id: string; name: string; armed: boolean }>;
   } | null;
   nearby_npcs: Array<{
     id: string;
@@ -107,6 +121,13 @@ export type GameStateSnapshot = {
     title: string;
     personality: string;
     is_alive: boolean;
+    faction?: string;
+    stock?: Array<{ name: string; quantity: number; price: number; item_type?: string }>;
+    topics?: Array<{ id: string; label: string }>;
+    asked?: string[];
+    trust?: number;
+    fear?: number;
+    respect?: number;
   }>;
   inventory: Array<{
     item_id: string;
@@ -114,6 +135,8 @@ export type GameStateSnapshot = {
     quantity: number;
     equipped: boolean;
     item_type: string;
+    durability?: number | null;
+    weight?: number;
   }>;
   active_quests: Array<{
     id: string;
@@ -125,10 +148,22 @@ export type GameStateSnapshot = {
   world_state: Record<string, unknown>;
   current_time: string;
   weather: string;
+  heard_rumors?: string[];
+  unheard_rumor_ids?: string[];
+  checkpoints?: string[];
+  known_locations?: Array<{
+    id: string;
+    name: string;
+    location_type: string;
+    here: boolean;
+  }>;
   combat: {
     id: string;
     status: string;
     round_number: number;
+    whose_turn?: string;
+    can_move?: boolean;
+    can_strike?: boolean;
     combatants: Array<{
       id: string;
       name: string;
@@ -137,6 +172,10 @@ export type GameStateSnapshot = {
       max_hp: number;
       ac: number;
       initiative: number;
+      cover?: number;
+      range_ft?: number;
+      x?: number;
+      y?: number;
     }>;
   } | null;
 };

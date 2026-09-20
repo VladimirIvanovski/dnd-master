@@ -6,7 +6,8 @@ from pydantic import ValidationError
 
 from app.ai.context_builder import ContextBuilder
 from app.ai.provider import LLMProvider
-from app.schemas.gameplay import DMResponse, DiceResultOut
+from app.ai.quality import scrub_dice_prose
+from app.schemas.gameplay import DMResponse, DialogueLine, DiceResultOut
 from app.schemas.state import GameState
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,11 @@ class DMService:
         try:
             response = self.llm.generate_structured(prompt, DMResponse, system=system)
             out = DMResponse.model_validate(response.model_dump())
+            out.narration = scrub_dice_prose(out.narration)
+            out.dialogue = [
+                DialogueLine(speaker=line.speaker, text=scrub_dice_prose(line.text))
+                for line in out.dialogue
+            ]
             if rewrite_pass:
                 # Never allow a second wave of dice in the same player request.
                 out.dice_requests = []

@@ -29,6 +29,7 @@ class Character(Base):
     xp: Mapped[int] = mapped_column(Integer, default=0)
     hp: Mapped[int] = mapped_column(Integer, default=10)
     max_hp: Mapped[int] = mapped_column(Integer, default=10)
+    temp_hp: Mapped[int] = mapped_column(Integer, default=0)
     ac: Mapped[int] = mapped_column(Integer, default=10)
     gold: Mapped[int] = mapped_column(Integer, default=0)
     silver: Mapped[int] = mapped_column(Integer, default=0)

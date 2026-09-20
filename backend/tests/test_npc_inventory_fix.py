@@ -27,7 +27,7 @@ def test_add_item_accepts_alternate_keys(db):
     assert any(i.name == "Rough Stone" for i in state.inventory)
 
 
-def test_spawn_npc_and_dialogue_speakers(db):
+def test_dialogue_does_not_spawn_unknown_speakers(db):
     campaign, character = _start(db)
     engine = GameEngine(db)
     state = GameStateLoader(db).load(campaign.id, character.id)
@@ -36,15 +36,15 @@ def test_spawn_npc_and_dialogue_speakers(db):
         state,
         [DialogueLine(speaker="Khalid", text="I'm Khalid.")],
     )
-    assert changes and changes[0].action == "spawn_npc"
-    applied = engine.apply_state_changes(
+    assert changes == []
+    before = {n.name for n in state.nearby_npcs}
+    engine.apply_state_changes(
         campaign_id=campaign.id,
         character_id=character.id,
         changes=changes,
     )
-    assert any("Khalid" in c for c in applied.applied)
     refreshed = GameStateLoader(db).load(campaign.id, character.id)
-    assert any(n.name == "Khalid" for n in refreshed.nearby_npcs)
+    assert {n.name for n in refreshed.nearby_npcs} == before
 
 
 from uuid import uuid4

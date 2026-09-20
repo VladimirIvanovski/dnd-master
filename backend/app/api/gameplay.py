@@ -149,7 +149,7 @@ def player_action(
         # Surface provider outages cleanly instead of raw httpx Client error text
         msg = str(exc)
         low = msg.lower()
-        if any(x in low for x in ("429", "404", "rate limit", "too many requests", "cerebras", "groq")):
+        if any(x in low for x in ("429", "402", "404", "rate limit", "too many requests", "payment required")):
             raise HTTPException(
                 status_code=503,
                 detail=(

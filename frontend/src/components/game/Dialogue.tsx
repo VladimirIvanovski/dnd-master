@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useRevealText } from "../../hooks/useRevealText";
-import { renderInline } from "./StoryMarkup";
+import { DustRevealText, renderInline } from "./StoryMarkup";
 
 type Props = {
   speaker: string;
@@ -13,8 +13,8 @@ type Props = {
 export function Dialogue({ speaker, text, reveal = false, onRevealDone, onSkipReady }: Props) {
   const { shown, done, skip } = useRevealText(text, {
     active: reveal,
-    msPerChunk: 28,
-    wordsPerChunk: 1,
+    msPerChunk: 25,
+    charsPerChunk: 1,
     onDone: onRevealDone,
   });
 
@@ -23,13 +23,16 @@ export function Dialogue({ speaker, text, reveal = false, onRevealDone, onSkipRe
   }, [onSkipReady, skip]);
 
   const display = reveal ? shown : text;
+  const dusting = reveal && !done;
 
   return (
     <div className="dialogue-line mx-auto max-w-3xl">
       <p className="display-text mb-1.5 text-[0.8rem] tracking-[0.12em] text-accent/90">{speaker}</p>
       <p className="story-text border-l border-bronze/50 pl-3.5 text-[1.08rem] leading-[1.75] italic text-parchment/85 md:text-[1.12rem]">
-        “{renderInline(display)}”
-        {reveal && !done && display ? <span className="story-reveal-caret" aria-hidden /> : null}
+        “
+        {dusting ? <DustRevealText text={display} /> : renderInline(display)}
+        ”
+        {dusting && display ? <span className="story-reveal-caret" aria-hidden /> : null}
       </p>
     </div>
   );

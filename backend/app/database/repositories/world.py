@@ -40,6 +40,14 @@ class LocationRepository:
     def get(self, location_id: uuid.UUID) -> Location | None:
         return self.db.get(Location, location_id)
 
+    def list_for_campaign(
+        self, campaign_id: uuid.UUID, *, discovered_only: bool = True
+    ) -> list[Location]:
+        stmt = select(Location).where(Location.campaign_id == campaign_id)
+        if discovered_only:
+            stmt = stmt.where(Location.discovered.is_(True))
+        return list(self.db.scalars(stmt).all())
+
 
 class NPCRepository:
     def __init__(self, db: Session):
@@ -68,6 +76,9 @@ class NPCRepository:
         if alive_only:
             stmt = stmt.where(NPC.is_alive.is_(True))
         return list(self.db.scalars(stmt).all())
+
+    def list_for_campaign(self, campaign_id: uuid.UUID) -> list[NPC]:
+        return list(self.db.scalars(select(NPC).where(NPC.campaign_id == campaign_id)).all())
 
     def get(self, npc_id: uuid.UUID) -> NPC | None:
         return self.db.get(NPC, npc_id)
@@ -108,6 +119,14 @@ class QuestRepository:
 class RelationshipRepository:
     def __init__(self, db: Session):
         self.db = db
+
+    def get(self, character_id: uuid.UUID, npc_id: uuid.UUID) -> Relationship | None:
+        return self.db.scalar(
+            select(Relationship).where(
+                Relationship.character_id == character_id,
+                Relationship.npc_id == npc_id,
+            )
+        )
 
     def get_or_create(self, character_id: uuid.UUID, npc_id: uuid.UUID) -> Relationship:
         rel = self.db.scalar(

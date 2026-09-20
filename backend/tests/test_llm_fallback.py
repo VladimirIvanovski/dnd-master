@@ -24,6 +24,7 @@ def _http_error(code: int) -> httpx.HTTPStatusError:
 
 def test_is_failover_detects_429_and_404():
     assert _is_failover_error(_http_error(429))
+    assert _is_failover_error(_http_error(402))
     assert _is_failover_error(_http_error(404))
     assert _is_failover_error(_http_error(503))
     assert not _is_failover_error(_http_error(400))

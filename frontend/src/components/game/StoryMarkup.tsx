@@ -29,6 +29,34 @@ export function StoryMarkup({
   );
 }
 
+/** Letter-by-letter mount: each new glyph rises out of dust/shadow. */
+export function DustRevealText({
+  text,
+  className = "",
+}: {
+  text: string;
+  className?: string;
+}) {
+  if (!text) return null;
+  const chars = Array.from(text);
+  return (
+    <span className={`story-dust-line ${className}`}>
+      {chars.map((ch, i) =>
+        ch === "\n" ? (
+          <br key={i} />
+        ) : (
+          <span
+            key={i}
+            className={ch === " " ? "story-dust-space" : "story-dust-glyph"}
+          >
+            {ch}
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
+
 export function renderInline(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   // Complete **bold** pairs only — incomplete markers stay as plain text while typing

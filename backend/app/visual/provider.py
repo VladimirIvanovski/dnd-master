@@ -37,6 +37,8 @@ class ImageGenerationProvider(ABC):
 class MockImageProvider(ImageGenerationProvider):
     """Deterministic placeholder PNGs — never blocks on a real model."""
 
+    kind = "mock"
+
     def is_available(self) -> bool:
         return True
 
@@ -75,6 +77,8 @@ def _snap_dim(value: int, minimum: int = 64) -> int:
 
 class SdTurboCpuProvider(ImageGenerationProvider):
     """Local SD-Turbo via Diffusers, CPU inference, variable resolutions."""
+
+    kind = "sd-turbo"
 
     def __init__(self, model_path: str, device: str = "cpu"):
         self.model_path = str(Path(model_path))

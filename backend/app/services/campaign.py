@@ -62,17 +62,23 @@ class CampaignService:
                 location_id=start.id,
                 knowledge=npc.knowledge or [],
             )
-        campaign.world_state = {
-            "started": True,
-            "starting_location_id": str(start.id),
-            "tone": brief.tone,
-            "themes": brief.themes,
-            "opening_narration": brief.opening_narration,
-            "opening_delivered": False,
-            "user_campaign_description": data.description or "",
-            "campaign_dna": dna,
-        }
+        from app.game.worldkit import seed_rumors
         from app.visual import VisualOrchestrator
+
+        campaign.world_state = seed_rumors(
+            {
+                "started": True,
+                "starting_location_id": str(start.id),
+                "tone": brief.tone,
+                "themes": brief.themes,
+                "opening_narration": brief.opening_narration,
+                "opening_delivered": False,
+                "user_campaign_description": data.description or "",
+                "campaign_dna": dna,
+            },
+            place=start.name,
+            people=[n.name for n in brief.starter_npcs[:1]],
+        )
 
         visuals = VisualOrchestrator(self.db)
         visuals.on_location_created(start)

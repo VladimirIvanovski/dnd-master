@@ -109,7 +109,9 @@ if _FRONTEND is not None:
             "health",
         }:
             raise HTTPException(status_code=404)
-        candidate = _FRONTEND / full_path
-        if candidate.is_file():
+        # Resolve and confine to the dist folder: encoded "../" (%2e%2e, %2F, %5C)
+        # must never reach files outside it (e.g. backend/.env).
+        candidate = (_FRONTEND / full_path).resolve()
+        if candidate.is_relative_to(_FRONTEND) and candidate.is_file():
             return FileResponse(candidate)
         return _spa_index()

@@ -498,6 +498,7 @@ class AssetGenerationService:
         width, height, steps = PROFILES.get(job.asset_type, (512, 512, 12))
         try:
             provider = get_image_provider()
+            job.model = getattr(provider, "kind", self.settings.image_model)
             generated = provider.generate(job.prompt, width=width, height=height, steps=steps)
             digest = image_hash(generated.data)
             reused = self.assets.find_by_hash(digest)
@@ -686,14 +687,12 @@ class VisualOrchestrator:
             self._pending_job_ids.append(job.id)
 
     def on_campaign_created(self, campaign_id: uuid.UUID, *, name: str, description: str = "", places: list[str] | None = None, tone: str = "") -> None:
-        # World map generation disabled for now — re-enable when map UX returns.
-        # job = self.gen.ensure_world_map(
-        #     campaign_id, name=name, description=description, places=places, tone=tone
-        # )
-        # self.db.flush()
-        # if job and job.state == JOB_QUEUED:
-        #     self._pending_job_ids.append(job.id)
-        return
+        job = self.gen.ensure_world_map(
+            campaign_id, name=name, description=description, places=places, tone=tone
+        )
+        self.db.flush()
+        if job and job.state == JOB_QUEUED:
+            self._pending_job_ids.append(job.id)
 
     def kick_workers_after_commit(self) -> None:
         """Call after db.commit() so workers can see queued jobs."""

@@ -1,7 +1,7 @@
 import type { PanelId } from "../../stores/uiStore";
 
 const ITEMS: Array<{ id: PanelId; label: string; icon: string; tip: string }> = [
-  // { id: "map", label: "Map", icon: "🗺", tip: "World map" },
+  { id: "map", label: "Map", icon: "🗺", tip: "Known places" },
   { id: "party", label: "Party", icon: "⚔", tip: "Your companions" },
   { id: "character", label: "Character", icon: "⚜", tip: "Character sheet" },
   { id: "inventory", label: "Inventory", icon: "🎒", tip: "Pack and gear" },

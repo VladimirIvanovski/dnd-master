@@ -120,8 +120,22 @@ def test_combat_initiative_damage_rewards(db):
                 action="start_combat",
                 params={
                     "combatants": [
-                        {"name": "Hero", "combatant_type": "character", "hp": 12, "initiative": 15},
-                        {"name": "Goblin", "combatant_type": "enemy", "hp": 7, "initiative": 8},
+                        {
+                            "name": "Hero",
+                            "combatant_type": "character",
+                            "hp": 12,
+                            "initiative": 15,
+                            "x": 3,
+                            "y": 1,
+                        },
+                        {
+                            "name": "Goblin",
+                            "combatant_type": "enemy",
+                            "hp": 7,
+                            "initiative": 8,
+                            "x": 3,
+                            "y": 2,
+                        },
                     ]
                 },
             )

@@ -4,12 +4,13 @@ import { loadAssetObjectUrl, visualApi, type MapData } from "../../api/visuals";
 type Props = {
   campaignId: string;
   currentLocationId?: string | null;
+  onSelect?: (name: string) => void;
 };
 
 const W = 560;
 const H = 360;
 
-export function WorldMapPanel({ campaignId, currentLocationId }: Props) {
+export function WorldMapPanel({ campaignId, currentLocationId, onSelect }: Props) {
   const [data, setData] = useState<MapData | null>(null);
   const [artUrl, setArtUrl] = useState<string | null>(null);
 
@@ -122,7 +123,13 @@ export function WorldMapPanel({ campaignId, currentLocationId }: Props) {
           {nodes.map((loc) => {
             const here = loc.id === currentLocationId;
             return (
-              <g key={loc.id} className="cursor-pointer">
+              <g
+                key={loc.id}
+                className="cursor-pointer"
+                onClick={() => {
+                  if (!here) onSelect?.(loc.name);
+                }}
+              >
                 <title>{`${loc.name} (${loc.type})`}</title>
                 {here ? (
                   <circle

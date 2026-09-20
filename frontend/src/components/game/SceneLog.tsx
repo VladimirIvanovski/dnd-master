@@ -4,6 +4,7 @@ import { Dialogue } from "./Dialogue";
 import { DiceRoll } from "../dice/DiceRoll";
 import { GameEvent } from "./GameEvent";
 import { Narration } from "./Narration";
+import { playerActionLabel } from "../../lib/sysAction";
 
 type Props = {
   messages: SceneMessage[];
@@ -117,11 +118,12 @@ export function SceneLog({ messages, streamingNarration, compact }: Props) {
         if (isStoryBeat(msg) && !revealed && !revealing) return null;
 
         if (msg.kind === "player") {
+          const shown = playerActionLabel(msg.text);
           return (
             <div key={msg.id} className="story-column ml-auto mr-0 max-w-lg text-right">
               <p className="text-[0.62rem] uppercase tracking-[0.2em] text-muted">You</p>
               <p className="story-text mt-1 text-[1.02rem] italic leading-relaxed text-parchment/65">
-                {msg.text}
+                {shown}
               </p>
             </div>
           );

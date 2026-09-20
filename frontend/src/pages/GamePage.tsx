@@ -12,6 +12,7 @@ import { LoadingState } from "../components/common/LoadingState";
 import { NPCPanel } from "../components/game/NPCPanel";
 import { QuestPanel } from "../components/quests/QuestPanel";
 import { LocationArt } from "../components/visual/LocationArt";
+import { MapPanel } from "../components/map/MapPanel";
 import { SlideOver } from "../components/ui/SlideOver";
 import { ToastStack } from "../components/ui/ToastStack";
 import { DiceFocus } from "../components/ui/DiceFocus";
@@ -189,12 +190,15 @@ export function GamePage() {
         leftDock={
           !snapshot.combat ? (
             <div className="flex flex-col gap-4">
-              <CharacterPanel character={snapshot.character} />
+              <CharacterPanel character={snapshot.character} inventory={snapshot.inventory} />
               <NPCPanel
                 npcs={snapshot.nearby_npcs.filter((n) => n.is_alive !== false)}
                 activeSpeaker={
                   [...messages].reverse().find((m) => m.kind === "dialogue")?.speaker ?? null
                 }
+                onAsk={(npcId, topicId) => {
+                  void sendAction(`sys:ask:${npcId}:${topicId}`);
+                }}
               />
               <InventoryPanel items={snapshot.inventory} />
             </div>
@@ -210,9 +214,32 @@ export function GamePage() {
                     <p className="display-text text-lg text-accent/90">{loc.name}</p>
                     <p className="text-sm uppercase tracking-[0.14em] text-muted">
                       {loc.location_type}
+                      {loc.lighting ? ` · ${loc.lighting}` : ""}
                     </p>
                     {loc.description ? (
                       <p className="mt-2 text-base leading-relaxed text-muted">{loc.description}</p>
+                    ) : null}
+                    {loc.traps && loc.traps.length > 0 ? (
+                      <p className="mt-2 text-sm text-muted">
+                        Traps: {loc.traps.map((t) => `${t.name}${t.armed ? "" : " (safe)"}`).join(", ")}
+                      </p>
+                    ) : null}
+                    {(snapshot.unheard_rumor_ids || []).length > 0 ? (
+                      <div className="mt-3">
+                        <p className="text-xs uppercase tracking-[0.12em] text-muted">Rumors</p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {(snapshot.unheard_rumor_ids || []).map((id) => (
+                            <button
+                              key={id}
+                              type="button"
+                              className="rounded border border-border/50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-[0.08em] text-muted hover:border-accent/50 hover:text-parchment"
+                              onClick={() => void sendAction(`sys:hear:${id}`)}
+                            >
+                              {id}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ) : null}
                   </>
                 ) : (
@@ -230,7 +257,19 @@ export function GamePage() {
         }
         overlays={
           <>
-            {/* World map UI disabled for now — see BottomNav + VisualOrchestrator.on_campaign_created */}
+            {shouldRender("map") ? (
+              <SlideOver open={panelOpen("map")} title="Map" onClose={closePanel}>
+                <MapPanel
+                  campaignId={campaignId}
+                  currentLocationId={loc?.id}
+                  places={snapshot.known_locations || []}
+                  onTravel={(name) => {
+                    closePanel();
+                    void sendAction(`Travel to ${name}`);
+                  }}
+                />
+              </SlideOver>
+            ) : null}
 
             {shouldRender("party") ? (
               <SlideOver open={panelOpen("party")} title="Party" onClose={closePanel}>
@@ -251,7 +290,7 @@ export function GamePage() {
 
             {shouldRender("character") ? (
               <SlideOver open={panelOpen("character")} title="Character" onClose={closePanel}>
-                <CharacterPanel character={snapshot.character} />
+                <CharacterPanel character={snapshot.character} inventory={snapshot.inventory} />
               </SlideOver>
             ) : null}
 
@@ -272,6 +311,15 @@ export function GamePage() {
                 <JournalPanel
                   messages={messages}
                   currentTime={snapshot.current_time || campaign.current_time}
+                  checkpoints={snapshot.checkpoints || []}
+                  onSave={() => {
+                    closePanel();
+                    void sendAction("sys:save:camp");
+                  }}
+                  onLoad={(name) => {
+                    closePanel();
+                    void sendAction(`sys:load:${name}`);
+                  }}
                 />
               </SlideOver>
             ) : null}
@@ -302,6 +350,9 @@ export function GamePage() {
           nearbyNpcs={snapshot.nearby_npcs.filter((n) => n.is_alive !== false)}
           combat={snapshot.combat}
           busy={busy}
+          onCombatCommand={(command) => {
+            void sendAction(command);
+          }}
         />
       </GameLayout>
     </div>

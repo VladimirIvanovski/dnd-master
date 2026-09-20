@@ -75,7 +75,7 @@ async def gameplay_ws(websocket: WebSocket):
                     low = detail.lower()
                     if any(
                         x in low
-                        for x in ("429", "404", "rate limit", "too many requests", "cerebras", "groq")
+                        for x in ("429", "402", "404", "rate limit", "too many requests", "payment required")
                     ):
                         detail = USER_LIMIT_MESSAGE
                 await websocket.send_json({"type": "error", "detail": detail})

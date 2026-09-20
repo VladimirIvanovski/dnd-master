@@ -22,6 +22,9 @@ type Props = {
   combat: {
     round_number: number;
     status: string;
+    whose_turn?: string;
+    can_move?: boolean;
+    can_strike?: boolean;
     combatants: Array<{
       id: string;
       name: string;
@@ -30,9 +33,14 @@ type Props = {
       max_hp: number;
       ac: number;
       initiative: number;
+      cover?: number;
+      range_ft?: number;
+      x?: number;
+      y?: number;
     }>;
   } | null;
   busy?: boolean;
+  onCombatCommand?: (command: string) => void;
 };
 
 export function StoryStage({
@@ -44,6 +52,7 @@ export function StoryStage({
   nearbyNpcs,
   combat,
   busy,
+  onCombatCommand,
 }: Props) {
   const activeSpeaker = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -65,12 +74,7 @@ export function StoryStage({
         <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[1.1fr_0.9fr]">
           <div className="flex min-h-0 flex-col border border-danger/25 bg-panel/40 p-3">
             <p className="mb-2 text-xs uppercase tracking-[0.2em] text-danger">Tactical field</p>
-            <div className="flex min-h-[160px] flex-1 items-center justify-center border border-dashed border-border/60 text-xs text-muted">
-              Deterministic combat map (coming soon)
-            </div>
-            <div className="mt-3">
-              <CombatPanel combat={combat} />
-            </div>
+            <CombatPanel combat={combat} onCommand={onCombatCommand} disabled={busy} />
           </div>
           <div className="flex min-h-0 flex-col overflow-hidden">
             <p className="mb-2 text-xs uppercase tracking-[0.18em] text-muted">Combat log</p>

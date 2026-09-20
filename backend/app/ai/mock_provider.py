@@ -130,6 +130,13 @@ class MockLLMProvider(LLMProvider):
         if any(q in low for q in ("who gave", "what did i promise", "what did i", "remind me", "do you remember")):
             return self._memory_answer(action, memories)
 
+        if any(w in low for w in ("talk", "ask", "speak", "greet")) and not npcs and "elira" not in low:
+            return DMResponse(
+                narration="There is no one here to speak with.",
+                dialogue=[],
+                events=[ProposedEvent(event_type="DISCOVERY_MADE", summary="Tried to talk, but nobody is here", importance=3)],
+            )
+
         if "elira" in low and any(w in low for w in ("meet", "talk", "greet", "approach")):
             return DMResponse(
                 narration="A hooded ranger steps from the trees. \"I am Elira,\" she says. \"The wilds are restless.\"",

@@ -29,7 +29,7 @@ class LLMUnavailableError(RuntimeError):
 def _is_failover_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         # 404 = model/route missing on that host — try the next provider
-        return exc.response.status_code in {404, 408, 429, 500, 502, 503, 504}
+        return exc.response.status_code in {402, 404, 408, 429, 500, 502, 503, 504}
     if isinstance(exc, (httpx.TimeoutException, httpx.TransportError, ConnectionError, TimeoutError)):
         return True
     if isinstance(exc, ValidationError):
@@ -39,8 +39,10 @@ def _is_failover_error(exc: BaseException) -> bool:
         needle in msg
         for needle in (
             "429",
+            "402",
             "404",
             "too many requests",
+            "payment required",
             "rate limit",
             "not found",
             "timeout",

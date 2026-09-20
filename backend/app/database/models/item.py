@@ -42,6 +42,7 @@ class CharacterItem(Base):
     )
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     equipped: Mapped[bool] = mapped_column(default=False)
+    durability: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     character = relationship("Character", back_populates="inventory")

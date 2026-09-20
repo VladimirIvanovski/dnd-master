@@ -17,3 +17,6 @@ def test_campaign_create_sets_tone_and_opening(db):
     assert "campaign_dna" in ws
     assert ws["campaign_dna"].get("version") == 1
     assert ws.get("user_campaign_description") == "Scorching sands and lost caravans."
+    rumors = ws.get("rumors") or []
+    assert len(rumors) >= 2
+    assert all(not r.get("heard") for r in rumors)

@@ -7,7 +7,7 @@ from app.database.models import Location
 from app.visual.hashing import normalize_name, visual_state_hash
 from app.visual.provider import MockImageProvider
 from app.visual.service import AssetGenerationService, LocationResolver, VisualOrchestrator
-from app.visual.types import LOCATION_ART
+from app.visual.types import LOCATION_ART, WORLD_MAP
 from tests.conftest import auth_header, make_user, start_campaign
 
 
@@ -133,3 +133,36 @@ def test_concurrent_location_jobs_single(db):
         )
     )
     assert count == 1
+
+
+def test_world_map_job_generates_once(db):
+    _user, campaign, _ch = start_campaign(db, username="vis_map")
+    service = AssetGenerationService(db)
+    job = service.ensure_world_map(
+        campaign.id, name=campaign.name, places=["Graymoor"], tone="ash"
+    )
+    if job:
+        service.process_job(job.id)
+        db.commit()
+    from sqlalchemy import select
+    from app.database.models.assets import AssetGenerationJob
+
+    ready = db.scalar(
+        select(AssetGenerationJob).where(
+            AssetGenerationJob.campaign_id == campaign.id,
+            AssetGenerationJob.asset_type == WORLD_MAP,
+        )
+    )
+    if ready and not ready.result_asset_id:
+        service.process_job(ready.id)
+        db.commit()
+        ready = db.scalar(
+            select(AssetGenerationJob).where(
+                AssetGenerationJob.campaign_id == campaign.id,
+                AssetGenerationJob.asset_type == WORLD_MAP,
+            )
+        )
+    assert ready is not None
+    assert ready.result_asset_id is not None
+    again = service.ensure_world_map(campaign.id, name=campaign.name, places=["Graymoor"])
+    assert again is None

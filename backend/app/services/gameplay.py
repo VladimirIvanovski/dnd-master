@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from sqlalchemy.orm import Session
 
@@ -18,19 +19,10 @@ from app.game.state import GameStateLoader
 from app.schemas.gameplay import DialogueLine, GameplayResponse, PlayerActionRequest, StateChange
 from app.schemas.state import GameState
 from app.services.dialogue_dedupe import strip_embedded_dialogue
+from app.ai.quality import scrub_dice_prose
 from app.services.memory import MemoryService
-from app.utils.npc_variety import random_npc_seed
 
 logger = logging.getLogger(__name__)
-
-_IGNORED_SPEAKERS = {
-    "you",
-    "player",
-    "narrator",
-    "dm",
-    "dungeon master",
-    "system",
-}
 
 _FALLBACK_SUGGESTIONS = [
     "Look around carefully",
@@ -69,6 +61,34 @@ def _normalize_suggestions(
             if len(out) >= 3:
                 break
     return out[:3]
+
+
+_USE_ITEM = re.compile(
+    r"\b(?:use|draw|throw|wield|swing|drink|eat)\b\s+(?:the\s+|a\s+|an\s+|my\s+)?([a-z0-9][a-z0-9' -]{0,40})",
+    re.I,
+)
+_GEAR_HINTS = (
+    "knife",
+    "sword",
+    "blade",
+    "bow",
+    "axe",
+    "dagger",
+    "potion",
+    "torch",
+    "shield",
+    "staff",
+    "wand",
+    "rope",
+    "lockpick",
+    "hammer",
+    "spear",
+    "crossbow",
+    "arrow",
+    "key",
+    "flask",
+    "legendary",
+)
 
 
 class GameplayService:
@@ -115,6 +135,21 @@ class GameplayService:
 
     def handle_action(self, request: PlayerActionRequest) -> GameplayResponse:
         state = self.loader.load(request.campaign_id, request.character_id)
+        direct = self._try_direct(request, state)
+        if direct:
+            return direct
+        refused = self._immediate_refusal(state, request.action)
+        if refused:
+            return self._commit_turn(
+                request,
+                state,
+                narration=refused,
+                changes=[],
+                dialogue=[],
+                dice_results=[],
+                suggested=["Look around carefully", "Check your belongings", "Wait and listen"],
+            )
+
         recent_events = self.memory.short_term(request.campaign_id)
         memories = self.memory.retrieve(state, request.action)
         meta = get_narrative_meta(state.world_state)
@@ -164,6 +199,133 @@ class GameplayService:
         changes.extend(self._dialogue_npcs_as_changes(state, dm_out.dialogue))
         changes = self._mechanical_fallbacks(state, request, dice_results, changes)
 
+        narration = strip_embedded_dialogue(dm_out.narration, dm_out.dialogue)
+        dialogue = self._sanitize_dialogue(state, dm_out.dialogue)
+        return self._commit_turn(
+            request,
+            state,
+            narration=narration,
+            changes=changes,
+            dialogue=dialogue,
+            dice_results=dice_results,
+            events=dm_out.events,
+            memories=dm_out.memory_candidates,
+            suggested=dm_out.suggested_actions,
+            describe_env=describe_env,
+            suggestion=suggestion,
+        )
+
+    def _immediate_refusal(self, state: GameState, action: str) -> str | None:
+        low = (action or "").strip().lower()
+        if not low or low.startswith("sys:"):
+            return None
+        match = _USE_ITEM.search(low)
+        if match:
+            noun = match.group(1).strip(" .!?,")
+            if any(h in noun for h in _GEAR_HINTS):
+                owned = [i.name.lower() for i in state.inventory]
+                if not any(noun in name or name in noun for name in owned):
+                    return f"You don't have {noun}."
+        talkish = any(w in low for w in ("talk", "ask ", "speak", "greet", "tell "))
+        if talkish and not state.nearby_npcs:
+            return "There is no one here to speak with."
+        return None
+
+    def _try_direct(self, request: PlayerActionRequest, state: GameState) -> GameplayResponse | None:
+        raw = (request.action or "").strip()
+        if not raw.startswith("sys:"):
+            return None
+        parts = raw[4:].split(":")
+        kind = parts[0] if parts else ""
+        changes: list[StateChange] = []
+        narration = "Nothing happens."
+        try:
+            if kind == "ask" and len(parts) >= 3:
+                changes = [
+                    StateChange(
+                        action="share_knowledge",
+                        params={"npc_id": parts[1], "topic_id": parts[2]},
+                    )
+                ]
+                narration = "They tell you what they know."
+            elif kind == "hear" and len(parts) >= 2:
+                changes = [StateChange(action="hear_rumor", params={"rumor_id": parts[1]})]
+                narration = "You catch the rumor clearly now."
+            elif kind == "move" and len(parts) >= 3:
+                hero = self._player_combatant(state)
+                if not hero:
+                    raise ValueError("not in combat")
+                changes = [
+                    StateChange(
+                        action="move_combatant",
+                        params={
+                            "combatant_id": str(hero.id),
+                            "dx": int(parts[1]),
+                            "dy": int(parts[2]),
+                        },
+                    )
+                ]
+                narration = "You shift your footing."
+            elif kind == "strike" and len(parts) >= 2:
+                changes = [
+                    StateChange(
+                        action="damage_combatant",
+                        params={"combatant_id": parts[1], "amount": 2},
+                    )
+                ]
+                narration = "You strike."
+            elif kind == "advance":
+                changes = [StateChange(action="advance_turn", params={})]
+                narration = "You hold and let the next combatant act."
+            elif kind == "save":
+                name = parts[1] if len(parts) > 1 else "camp"
+                changes = [StateChange(action="save_checkpoint", params={"name": name})]
+                narration = "You mark this moment."
+            elif kind == "load":
+                name = parts[1] if len(parts) > 1 else "camp"
+                changes = [StateChange(action="load_checkpoint", params={"name": name})]
+                narration = "You return to a marked moment."
+            else:
+                return None
+        except ValueError:
+            return None
+        return self._commit_turn(
+            request, state, narration=narration, changes=changes, dialogue=[], dice_results=[]
+        )
+
+    @staticmethod
+    def _player_combatant(state: GameState):
+        if not state.combat:
+            return None
+        return next(
+            (
+                c
+                for c in state.combat.combatants
+                if c.combatant_type in {"player", "character"}
+            ),
+            None,
+        )
+
+    def _commit_turn(
+        self,
+        request: PlayerActionRequest,
+        state: GameState,
+        *,
+        narration: str,
+        changes: list[StateChange],
+        dialogue: list[DialogueLine],
+        dice_results: list,
+        events: list | None = None,
+        memories: list | None = None,
+        suggested: list[str] | None = None,
+        describe_env: bool = False,
+        suggestion=None,
+    ) -> GameplayResponse:
+        narration = scrub_dice_prose(narration)
+        dialogue = [
+            DialogueLine(speaker=line.speaker, text=scrub_dice_prose(line.text))
+            for line in dialogue
+        ]
         apply_result = self.engine.apply_state_changes(
             campaign_id=request.campaign_id,
             character_id=request.character_id,
@@ -174,29 +336,27 @@ class GameplayService:
             campaign_id=request.campaign_id,
             character_id=request.character_id,
             location_id=location_id,
-            proposed=dm_out.events,
+            proposed=events or [],
         )
         apply_result.event_summaries = event_summaries
         apply_result.dice_results = dice_results
 
-        narration = strip_embedded_dialogue(dm_out.narration, dm_out.dialogue)
+        if suggestion is not None:
+            meta = get_narrative_meta(state.world_state)
+            fired_id = suggestion.archetype.id if suggestion.fire and suggestion.archetype else None
+            fired_cat = (
+                suggestion.archetype.category if suggestion.fire and suggestion.archetype else None
+            )
+            new_meta = next_narrative_meta(
+                meta,
+                state=state,
+                described=describe_env,
+                fired_event_id=fired_id,
+                fired_category=fired_cat,
+            )
+            self._persist_narrative_meta(request.campaign_id, new_meta)
 
-        fired_id = suggestion.archetype.id if suggestion.fire and suggestion.archetype else None
-        fired_cat = (
-            suggestion.archetype.category if suggestion.fire and suggestion.archetype else None
-        )
-        # Cooldown advances whenever a random beat was *offered*, so we never spam every turn.
-        new_meta = next_narrative_meta(
-            meta,
-            state=state,
-            described=describe_env,
-            fired_event_id=fired_id,
-            fired_category=fired_cat,
-        )
-        self._persist_narrative_meta(request.campaign_id, new_meta)
-
-        for candidate in dm_out.memory_candidates:
-            # Prefer meaningful memories (importance >= 4 already filtered in store)
+        for candidate in memories or []:
             self.memory.store_candidate(
                 request.campaign_id,
                 candidate.content,
@@ -232,17 +392,19 @@ class GameplayService:
         if orch:
             orch.kick_workers_after_commit()
         refreshed = self.loader.load(request.campaign_id, request.character_id)
-
+        if apply_result.rejected and not apply_result.applied:
+            narration = apply_result.rejected[0].split(": ", 1)[-1]
+            narration = f"That doesn't work: {narration}."
         return GameplayResponse(
-            narration=narration,
-            dialogue=dm_out.dialogue,
+            narration=narration.strip(),
+            dialogue=dialogue,
             dice_results=dice_results,
             applied_events=event_summaries,
             applied_changes=apply_result.applied,
             rejected_changes=apply_result.rejected,
             state_snapshot=refreshed.model_dump(mode="json"),
             suggested_actions=_normalize_suggestions(
-                dm_out.suggested_actions,
+                suggested,
                 has_nearby_npcs=bool(refreshed.nearby_npcs),
             ),
         )
@@ -412,33 +574,19 @@ class GameplayService:
         return out
 
     @staticmethod
+    def _sanitize_dialogue(state: GameState, dialogue: list[DialogueLine]) -> list[DialogueLine]:
+        nearby = {n.name.lower() for n in state.nearby_npcs if getattr(n, "is_alive", True)}
+        if not nearby:
+            return []
+        out: list[DialogueLine] = []
+        for line in dialogue or []:
+            speaker = (line.speaker or "").strip()
+            if speaker.lower() in nearby:
+                out.append(line)
+        return out
+
+    @staticmethod
     def _dialogue_npcs_as_changes(
         state: GameState, dialogue: list[DialogueLine]
     ) -> list[StateChange]:
-        # Do not invent people from dialogue alone when the scene is empty.
-        if not state.nearby_npcs:
-            return []
-        known = {n.name.lower() for n in state.nearby_npcs}
-        known.add(state.character.name.lower())
-        known |= _IGNORED_SPEAKERS
-        loc_id = str(state.current_location.id) if state.current_location else None
-        out: list[StateChange] = []
-        for line in dialogue:
-            name = (line.speaker or "").strip()
-            if not name or name.lower() in known:
-                continue
-            known.add(name.lower())
-            flavor = random_npc_seed(avoid_names=known)
-            out.append(
-                StateChange(
-                    action="spawn_npc",
-                    params={
-                        "name": name,
-                        "location_id": loc_id,
-                        "title": flavor.title,
-                        "personality": flavor.personality,
-                        "goals": flavor.goals,
-                    },
-                )
-            )
-        return out
+        return []

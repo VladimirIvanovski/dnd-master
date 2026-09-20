@@ -21,7 +21,7 @@ def get_llm_provider() -> LLMProvider:
         chain = _cerebras_failover_chain(settings)
         if len(chain) == 1:
             return chain[0][1]
-        labels = " → ".join(label for label, _ in chain)
+        labels = " -> ".join(label for label, _ in chain)
         logger.info("LLM failover chain: %s", labels)
         return FallbackLLMProvider(chain)
 
@@ -29,7 +29,7 @@ def get_llm_provider() -> LLMProvider:
         chain = _groq_failover_chain(settings)
         if len(chain) == 1:
             return chain[0][1]
-        labels = " → ".join(label for label, _ in chain)
+        labels = " -> ".join(label for label, _ in chain)
         logger.info("LLM failover chain: %s", labels)
         return FallbackLLMProvider(chain)
 

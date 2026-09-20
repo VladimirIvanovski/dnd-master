@@ -3,9 +3,12 @@ import type { SceneMessage } from "../../types/game";
 type Props = {
   messages: SceneMessage[];
   currentTime?: string;
+  checkpoints?: string[];
+  onSave?: () => void;
+  onLoad?: (name: string) => void;
 };
 
-export function JournalPanel({ messages, currentTime }: Props) {
+export function JournalPanel({ messages, currentTime, checkpoints = [], onSave, onLoad }: Props) {
   const entries = messages.filter(
     (m) => m.kind === "narration" || m.kind === "player" || m.kind === "event" || m.kind === "dialogue",
   );
@@ -17,6 +20,33 @@ export function JournalPanel({ messages, currentTime }: Props) {
       </p>
       {currentTime ? (
         <p className="text-center text-xs uppercase tracking-widest text-muted">{currentTime}</p>
+      ) : null}
+      {onSave ? (
+        <div className="space-y-2 border-b border-border/40 pb-3">
+          <button
+            type="button"
+            className="btn-fantasy w-full px-2 py-1 text-[0.7rem] uppercase tracking-[0.12em]"
+            onClick={onSave}
+          >
+            Save checkpoint
+          </button>
+          {checkpoints.length ? (
+            <div className="flex flex-wrap gap-1">
+              {checkpoints.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="rounded border border-border/50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-[0.08em] text-muted hover:border-accent/50 hover:text-parchment"
+                  onClick={() => onLoad?.(name)}
+                >
+                  Load {name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted">No checkpoints yet.</p>
+          )}
+        </div>
       ) : null}
       {entries.length === 0 ? (
         <p className="text-sm italic text-muted">The pages are blank. Your tale awaits.</p>
